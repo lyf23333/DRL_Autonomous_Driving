@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Current File",
-            "type": "python",
+            "name": "generate traffic scene",
+            "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/generate_traffic_scene.py",
+            "program": "${workspaceFolder}/simulation/generate_traffic_scene.py",
             "console": "integratedTerminal",
             "justMyCode": true
         }
