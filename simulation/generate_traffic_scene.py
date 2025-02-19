@@ -1,9 +1,7 @@
 
 import carla
-import time
-from utils import get_and_print_blueprints
-import random
 
+from utils import get_and_print_blueprints
 
 def main():
     # Connect to the CARLA simulator
@@ -15,9 +13,6 @@ def main():
 
     map_name = world.get_map().name
     print(f"Current map: {map_name}")
-
-    # Load a lightweight map
-    client.load_world("Town04")  # Smallest map, best for low GPU usage
 
     blueprint_library = get_and_print_blueprints(world)
 
@@ -44,35 +39,7 @@ def main():
     pedestrian = world.spawn_actor(pedestrian_blueprint, pedestrian_spawn_point)
     print(f"Pedestrian spawned at: {pedestrian_spawn_point.location}")
 
-    # Spawn camera and attach it to the vehicle
-    # Camera will be mounted 1.5m forward and 2.0m up from vehicle center
-    camera_bp = blueprint_library.find("sensor.camera.rgb")  # RGB Camera
-    camera_transform = carla.Transform(carla.Location(x=1.5, z=2.0))  # Positioning
-    camera = world.spawn_actor(camera_bp, camera_transform, attach_to=vehicle)
 
-    # Function to process images
-    def process_image(image):
-        image.save_to_disk("output/frame_%06d.png" % image.frame)
-
-    camera.listen(lambda image: process_image(image))
-
-
-    # Move forward for 5 seconds
-    vehicle.apply_control(carla.VehicleControl(throttle=0.5))
-    time.sleep(5)
-    # Stop the vehicle
-    vehicle.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0))
-
-    # Make the pedestrian walk forward
-    pedestrian.apply_control(carla.WalkerControl(direction=carla.Vector3D(1, 0, 0)))
-    time.sleep(5)
-    # Stop the pedestrian
-    pedestrian.apply_control(carla.WalkerControl(direction=carla.Vector3D(0, 0, 0)))
-
-    # Clean up
-    vehicle.destroy()
-    pedestrian.destroy()
-    camera.destroy()
 
 if __name__ == "__main__":
     main()
