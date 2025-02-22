@@ -14,6 +14,10 @@ class CarlaEnv(gym.Env):
         self.client.set_timeout(10.0)
         self.world = self.client.get_world()
         
+        # Scenario management
+        self.active_scenario = None
+        self.scenario_config = None
+        
         # Set up action and observation spaces
         self.action_space = spaces.Box(
             low=np.array([-1.0, -1.0]),  # [steering, throttle/brake]
@@ -25,10 +29,11 @@ class CarlaEnv(gym.Env):
         # - Vehicle state (position, velocity, acceleration)
         # - Sensor data (cameras, lidar)
         # - Trust metrics
+        # - Scenario-specific observations
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(20,),  # Adjust based on actual observation vector size
+            shape=(25,),  # Increased to accommodate scenario observations
             dtype=np.float32
         )
         
@@ -37,12 +42,17 @@ class CarlaEnv(gym.Env):
         self.manual_interventions = 0
         self.intervention_threshold = 5
         
+    def set_scenario(self, scenario, config=None):
+        """Set the active scenario for the environment"""
+        self.active_scenario = scenario
+        self.scenario_config = config
+        
     def reset(self):
         """Reset the environment to initial state"""
         # Reset the simulation
         self.world.tick()
         
-        # Spawn vehicle
+        # Spawn ego vehicle
         blueprint_library = self.world.get_blueprint_library()
         vehicle_bp = blueprint_library.find('vehicle.tesla.model3')
         spawn_points = self.world.get_map().get_spawn_points()
@@ -54,6 +64,10 @@ class CarlaEnv(gym.Env):
         # Reset trust metrics
         self.trust_level = 0.5
         self.manual_interventions = 0
+        
+        # Setup active scenario if exists
+        if self.active_scenario:
+            self.active_scenario.setup()
         
         return self._get_obs()
     
@@ -67,13 +81,13 @@ class CarlaEnv(gym.Env):
         )
         self.vehicle.apply_control(control)
         
+        # Tick the simulation
+        self.world.tick()
+        
         # Get new observation
         obs = self._get_obs()
         
-        # Calculate reward based on:
-        # - Progress towards goal
-        # - Safety metrics
-        # - Trust level
+        # Calculate reward
         reward = self._calculate_reward()
         
         # Check if episode is done
@@ -84,6 +98,10 @@ class CarlaEnv(gym.Env):
             'trust_level': self.trust_level,
             'manual_interventions': self.manual_interventions
         }
+        
+        # Add scenario-specific info if available
+        if self.active_scenario:
+            info['scenario_complete'] = self.active_scenario.check_scenario_completion()
         
         return obs, reward, done, info
     
@@ -96,40 +114,61 @@ class CarlaEnv(gym.Env):
         transform = self.vehicle.get_transform()
         velocity = self.vehicle.get_velocity()
         
-        # Combine all observations
-        obs = np.array([
+        # Basic observations
+        basic_obs = np.array([
             transform.location.x,
             transform.location.y,
             transform.rotation.yaw,
             velocity.x,
             velocity.y,
-            self.trust_level,
-            # Add more observations as needed
+            self.trust_level
         ])
         
-        return obs
+        # Get scenario-specific observations
+        if self.active_scenario:
+            scenario_obs = self.active_scenario.get_scenario_specific_obs()
+        else:
+            scenario_obs = np.zeros(5)  # Default size for scenario observations
+        
+        # Combine all observations
+        return np.concatenate([basic_obs, scenario_obs])
     
     def _calculate_reward(self):
         """Calculate reward based on current state"""
-        # Basic reward structure
-        reward = 0
+        if not self.active_scenario:
+            return 0.0
+            
+        # Basic reward components
+        progress_reward = 0.0  # Based on distance to goal
+        safety_reward = 0.0    # Based on distance to obstacles/vehicles
+        trust_reward = self.trust_level  # Higher trust = higher reward
         
-        # Add reward components based on:
-        # 1. Progress towards goal
-        # 2. Safety (distance to obstacles)
-        # 3. Trust level
-        # 4. Smooth driving
+        # Penalty for interventions
+        intervention_penalty = -1.0 * self.manual_interventions
         
-        return reward
+        # Check scenario completion
+        if self.active_scenario.check_scenario_completion():
+            completion_reward = 10.0
+        else:
+            completion_reward = 0.0
+        
+        # Combine rewards
+        total_reward = (
+            progress_reward +
+            safety_reward +
+            trust_reward +
+            intervention_penalty +
+            completion_reward
+        )
+        
+        return total_reward
     
     def _is_done(self):
         """Check if episode is done"""
-        # Episode ends if:
-        # 1. Goal is reached
-        # 2. Collision occurs
-        # 3. Too many manual interventions
-        # 4. Time limit exceeded
         if self.manual_interventions > self.intervention_threshold:
+            return True
+            
+        if self.active_scenario and self.active_scenario.check_scenario_completion():
             return True
             
         return False
@@ -140,4 +179,12 @@ class CarlaEnv(gym.Env):
             self.manual_interventions += 1
             self.trust_level = max(0.0, self.trust_level - 0.1)
         else:
-            self.trust_level = min(1.0, self.trust_level + 0.05) 
+            self.trust_level = min(1.0, self.trust_level + 0.05)
+    
+    def close(self):
+        """Cleanup the environment"""
+        if self.active_scenario:
+            self.active_scenario.cleanup()
+        
+        if hasattr(self, 'vehicle'):
+            self.vehicle.destroy() 

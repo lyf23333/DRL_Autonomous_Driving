@@ -25,6 +25,8 @@ class LaneSwitchingScenario:
             
             # Set autopilot for other vehicle
             self.other_vehicle.set_autopilot(True)
+        else:
+            raise ValueError("No spawn points found for other vehicle")
     
     def get_scenario_specific_obs(self):
         """Get scenario-specific observations"""
