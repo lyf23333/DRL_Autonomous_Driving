@@ -2,6 +2,7 @@ from stable_baselines3 import PPO, SAC, DDPG
 from stable_baselines3.common.callbacks import BaseCallback
 import numpy as np
 import os
+from typing import Type, Optional
 
 """
 This file contains the implementation of the DRL agent.
@@ -60,10 +61,13 @@ class DRLAgent:
         else:
             raise ValueError(f"Unsupported algorithm: {self.algorithm}")
     
-    def train(self, scenario, total_timesteps=100000):
+    def train(self, scenario_class: Type, total_timesteps=100000, scenario_config=None):
         """Train the agent on a specific scenario"""
-        # Setup scenario
-        scenario.setup()
+        # Create scenario instance
+        scenario = scenario_class(self.env)
+        
+        # Set scenario in environment
+        self.env.set_scenario(scenario, scenario_config)
         
         # Create callback for trust adaptation
         callback = TrustCallback(self.trust_interface)
@@ -84,16 +88,19 @@ class DRLAgent:
             
         finally:
             # Cleanup scenario
-            scenario.cleanup()
+            if hasattr(self.env, 'active_scenario'):
+                self.env.active_scenario.cleanup()
     
-    def evaluate(self, scenario, n_episodes=10):
+    def evaluate(self, scenario_class: Type, n_episodes=10, scenario_config=None):
         """Evaluate the agent on a specific scenario"""
-        # Setup scenario
-        scenario.setup()
+        # Create and setup scenario
+        scenario = scenario_class(self.env)
+        self.env.set_scenario(scenario, scenario_config)
         
         try:
             total_reward = 0
             trust_levels = []
+            completion_rate = 0
             
             for episode in range(n_episodes):
                 obs = self.env.reset()
@@ -111,6 +118,10 @@ class DRLAgent:
                     episode_reward += reward
                     trust_levels.append(info['trust_level'])
                     
+                    # Check scenario completion
+                    if info.get('scenario_complete', False):
+                        completion_rate += 1
+                    
                     # Update trust interface display
                     if self.trust_interface:
                         self.trust_interface.update_display()
@@ -122,10 +133,12 @@ class DRLAgent:
             print("\nEvaluation Results:")
             print(f"Average Reward: {total_reward / n_episodes:.2f}")
             print(f"Average Trust Level: {np.mean(trust_levels):.2f}")
+            print(f"Scenario Completion Rate: {completion_rate / n_episodes * 100:.1f}%")
             
         finally:
             # Cleanup scenario
-            scenario.cleanup()
+            if hasattr(self.env, 'active_scenario'):
+                self.env.active_scenario.cleanup()
     
     def load(self, model_path):
         """Load a trained model"""

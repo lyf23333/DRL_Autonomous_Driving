@@ -50,6 +50,7 @@ def main():
         print(f"Error: Unknown scenario {args.scenario}")
         sys.exit(1)
     
+    # TODO: We need to consider whether we train one for each agent or we train a single agent for all scenarios
     scenario = scenario_class(env)
     
     try:
