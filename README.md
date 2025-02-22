@@ -55,16 +55,52 @@ cd /opt/carla-simulator
 │   └── utils/         # Utility functions
 ├── config/            # Configuration files
 ├── data/             # Data collection and storage
+├── scripts/          # Utility scripts
 └── tests/            # Test cases
 ```
 
 ## Running Scenarios
-1. Start CARLA simulator
-2. Activate virtual environment
-3. Run scenarios:
+
+### Automated Training/Evaluation
 ```bash
-python src/main.py --scenario [scenario_name]
+python src/main.py --scenario [scenario_name] --algorithm [algorithm_name] --train
+python src/main.py --scenario [scenario_name] --algorithm [algorithm_name] --eval
 ```
+
+### Manual Scenario Testing
+The project includes a manual testing script that allows you to control the vehicle and test different scenarios:
+
+1. Start CARLA simulator:
+```bash
+cd /opt/carla-simulator
+./CarlaUE4.sh -quality-level=Low
+```
+
+2. Run the manual testing script:
+```bash
+python scripts/manual_scenario_test.py --scenario [scenario_name]
+```
+
+Available scenarios:
+- `lane_switching`: Test lane changing behavior
+- `urban_traffic`: Navigate through urban traffic with vehicles and pedestrians
+- `obstacle_avoidance`: Avoid static and dynamic obstacles
+
+Controls:
+- Arrow Keys: Control the vehicle
+  - ↑: Accelerate
+  - ↓: Brake
+  - ←/→: Steer
+- Space: Record manual intervention
+- R: Reset episode
+- ESC: Quit
+
+The manual testing interface provides real-time information about:
+- Vehicle controls (steering, throttle, brake)
+- Trust level
+- Accumulated reward
+- Episode statistics
+- Scenario completion status
 
 ## Trust Feedback Mechanisms
 The system collects trust-related feedback through:
