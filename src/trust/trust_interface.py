@@ -4,12 +4,18 @@ import json
 from datetime import datetime
 import os
 import random
+import carla
 
 class TrustInterface:
-    def __init__(self, screen_width=800, screen_height=200):
+    def __init__(self, screen_width=800, screen_height=200, port = 2000):
         pygame.init()
         self.screen = pygame.display.set_mode((screen_width, screen_height))
         pygame.display.set_caption("Trust Feedback Interface")
+
+        # Connect to CARLA server
+        self.client = carla.Client('localhost', port)
+        self.client.set_timeout(10.0)
+        self.world = self.client.get_world()
         
         # Colors
         self.WHITE = (255, 255, 255)
@@ -48,7 +54,7 @@ class TrustInterface:
         if intervention:
             # Decrease trust on intervention
             self.trust_level = max(0.0, self.trust_level - self.trust_decrease_rate)
-            self.last_intervention_time = datetime.now().timestamp()
+            self.last_intervention_time = self.world.get_snapshot().timestamp.elapsed_seconds
             self.record_intervention()
         else:
             # Gradually increase trust during smooth operation
@@ -56,7 +62,7 @@ class TrustInterface:
     
     def record_intervention(self):
         """Record a manual intervention"""
-        timestamp = datetime.now().timestamp()
+        timestamp = self.world.get_snapshot().timestamp.elapsed_seconds
         self.manual_interventions.append({
             'timestamp': timestamp,
             'trust_level': self.trust_level

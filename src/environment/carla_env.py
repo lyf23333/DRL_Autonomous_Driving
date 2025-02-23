@@ -7,6 +7,7 @@ class CarlaEnv(gym.Env):
     """Custom Carla environment that follows gym interface"""
     
     def __init__(self, town='Town01', port=2000):
+        self._initialized = False
         super(CarlaEnv, self).__init__()
         
         # Connect to CARLA server
@@ -47,6 +48,7 @@ class CarlaEnv(gym.Env):
             )
         })
         
+        
     def set_scenario(self, scenario, config=None):
         """Set the active scenario for the environment"""
         self.active_scenario = scenario
@@ -58,6 +60,8 @@ class CarlaEnv(gym.Env):
         
     def reset(self):
         """Reset the environment to initial state"""
+        if not self._initialized:
+            self._initialized = True
         # Reset the simulation
         self.world.tick()
         
@@ -93,7 +97,7 @@ class CarlaEnv(gym.Env):
         self.last_step_time = current_time
         
         # Check for trust-based intervention
-        if self.trust_interface is not None:
+        if self.trust_interface is not None and self._initialized:
             should_intervene = self.trust_interface.should_intervene(current_time)
             if should_intervene:
                 # Override action with emergency brake
@@ -214,8 +218,6 @@ class CarlaEnv(gym.Env):
     
     def _is_done(self):
         """Check if episode is done"""
-        if self.intervention_active:
-            return True
             
         if self.active_scenario and self.active_scenario.check_scenario_completion():
             return True

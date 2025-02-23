@@ -88,9 +88,14 @@ cd /opt/carla-simulator
 ./CarlaUE4.sh -quality-level=Low
 ```
 
-2. Run the manual testing script:
+2. Run the manual testing script, in which you can control the vehicle by keyboard:
 ```bash
-python scripts/manual_scenario_test.py --scenario [scenario_name]
+python3 scripts/manual_scenario_test.py --scenario [scenario_name]
+```
+
+3. Run the automatic testing script, in which the vehicle is controlled by a PID controller:
+```bash
+python3 scripts/automatic_scenario_test.py --scenario [scenario_name]
 ```
 
 Available scenarios:
