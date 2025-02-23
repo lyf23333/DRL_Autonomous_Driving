@@ -40,16 +40,16 @@ class ObstacleAvoidanceScenario:
                 ]
             },
             'dynamic_vehicles': {
-                'num': 2,
-                'min_distance': 20.0,
+                'num': 5,
+                'min_distance': 10.0,
                 'models': [
                     'vehicle.tesla.model3',
                     'vehicle.audi.a2'
                 ]
             },
             'dynamic_walkers': {
-                'num': 2,
-                'min_distance': 15.0,
+                'num': 5,
+                'min_distance': 5.0,
                 'models': [
                     'walker.pedestrian.0013',
                     'walker.pedestrian.0021'
