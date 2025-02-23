@@ -97,6 +97,7 @@ Available scenarios:
 - `lane_switching`: Test lane changing behavior
 - `urban_traffic`: Navigate through urban traffic with vehicles and pedestrians
 - `obstacle_avoidance`: Avoid static and dynamic obstacles
+- `emergency_braking`: Test reaction to sudden braking events and emergency stops
 
 Controls:
 - Arrow Keys: Control the vehicle
@@ -124,15 +125,9 @@ The system collects trust-related feedback through:
 1. Lane Switching
 2. Urban Traffic Navigation
 3. Obstacle Avoidance
-4. Emergency Braking ()
-5. Pedestrian Interaction
+4. Emergency Braking
+5. Pedestrian Interaction (TODO)
 
 
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Generate Traffic Scene
-
-```bash
-python3 simulation/generate_traffic_scene.py
-```
