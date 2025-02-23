@@ -11,12 +11,18 @@ The project focuses on adapting autonomous vehicle behavior based on user's disp
 - CARLA Simulator 0.9.15
 - GPU with at least 8GB memory (recommended)
 
+**Note**: Have not tested in windows yet
+
 ## Installation Steps
 
 1. **Install CARLA Simulator**
+Follow the guiline described [here](https://carla.readthedocs.io/en/latest/start_quickstart/) to install carla simulator and python api required pacakge.
+
+Or you can follow the guide here:
+
 ```bash
 # Download CARLA 0.9.15
-wget https://carla-releases.s3.eu-west-3.amazonaws.com/Linux/CARLA_0.9.15.tar.gz
+wget https://github.com/carla-simulator/carla/archive/refs/tags/0.9.15.tar.gz
 
 # Extract to your preferred location (e.g., /opt/carla-simulator)
 sudo mkdir -p /opt/carla-simulator
@@ -26,23 +32,29 @@ sudo tar -xf CARLA_0.9.15.tar.gz -C /opt/carla-simulator
 echo 'export PYTHONPATH=$PYTHONPATH:/opt/carla-simulator/PythonAPI/carla/dist/carla-0.9.15-py3.7-linux-x86_64.egg' >> ~/.bashrc
 source ~/.bashrc
 ```
-
-2. **Set up Python Environment**
-```bash
-# Create and activate virtual environment
-python3.7 -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
 3. **Verify CARLA Installation**
 ```bash
 # Start CARLA simulator
 cd /opt/carla-simulator
 ./CarlaUE4.sh -quality-level=Low
 ```
+
+3. **Set up Python Environment**
+```bash
+# Create and activate virtual environment
+conda create -n carla python=3.9
+conda activate carla
+
+# Install dependencies
+cd /opt/carla-simulator/PythonAPI/examples
+pip3 install -r requirements.txt
+```
+
+4. **Set up Python Environment for this repo**
+mkdir -p ~/git && cd ~/git
+git clone git@github.com:lyf23333/DRL_Autonomous_Driving.git
+pip3 install -r requirements.txt
+
 
 ## Project Structure
 ```
@@ -112,11 +124,9 @@ The system collects trust-related feedback through:
 1. Lane Switching
 2. Urban Traffic Navigation
 3. Obstacle Avoidance
-4. Emergency Braking
+4. Emergency Braking ()
 5. Pedestrian Interaction
 
-## Contributing
-Please read CONTRIBUTING.md for details on our code of conduct and the process for submitting pull requests.
 
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details.
