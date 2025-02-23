@@ -8,7 +8,18 @@
             "name": "generate traffic scene",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/simulation/generate_traffic_scene.py",
+            "program": "${workspaceFolder}/examples/generate_traffic_scene.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "manual control test",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/manual_scenario_test.py",
+            "args": [
+                "--scenario=lane_switching"
+            ],
             "console": "integratedTerminal",
             "justMyCode": true
         }
