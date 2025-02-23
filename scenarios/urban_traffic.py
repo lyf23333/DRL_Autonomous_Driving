@@ -3,6 +3,20 @@ import numpy as np
 from src.environment.carla_env import CarlaEnv
 
 class UrbanTrafficScenario:
+    """A scenario class that simulates urban traffic conditions in CARLA.
+    
+    This class creates a realistic urban environment with:
+    - Multiple traffic vehicles driving autonomously
+    - Pedestrians walking on sidewalks and crossing streets
+    - Traffic lights at intersections
+    
+    The scenario spawns vehicles and pedestrians at valid spawn points while maintaining:
+    - Minimum safe distances between actors
+    - Realistic traffic patterns and behaviors
+    - Proper traffic light synchronization
+    
+    The scenario tracks all spawned actors and provides cleanup functionality.
+    """
     def __init__(self, env: CarlaEnv):
         self.env = env
         self.world = env.world
@@ -27,40 +41,95 @@ class UrbanTrafficScenario:
         blueprint_library = self.world.get_blueprint_library()
         spawn_points = self.world.get_map().get_spawn_points()
         
+        # Keep track of used spawn points
+        used_spawn_points = set()
+        min_distance = 15.0  # Minimum distance between vehicles
+        
         for _ in range(min(num_vehicles, len(spawn_points))):
+            # Find a suitable spawn point
+            valid_spawn_point = None
+            max_attempts = 20
+            
+            for _ in range(max_attempts):
+                candidate_point = np.random.choice(spawn_points)
+                
+                # Check distance from other vehicles
+                is_valid = True
+                for used_point in used_spawn_points:
+                    if candidate_point.location.distance(used_point.location) < min_distance:
+                        is_valid = False
+                        break
+                
+                if is_valid:
+                    valid_spawn_point = candidate_point
+                    break
+            
+            if valid_spawn_point is None:
+                continue
+            
             # Randomly select vehicle blueprint
             bp = np.random.choice(blueprint_library.filter('vehicle.*.*'))
             
             # Try to spawn the vehicle
-            spawn_point = np.random.choice(spawn_points)
-            vehicle = self.world.spawn_actor(bp, spawn_point)
+            vehicle = self.world.spawn_actor(bp, valid_spawn_point)
             
             if vehicle is not None:
                 vehicle.set_autopilot(True)
                 self.vehicles.append(vehicle)
+                used_spawn_points.add(valid_spawn_point)
     
     def _spawn_pedestrians(self, num_pedestrians):
         """Spawn pedestrians in the scene"""
         blueprint_library = self.world.get_blueprint_library()
         spawn_points = self.world.get_map().get_spawn_points()
         
+        # Keep track of used spawn points
+        used_spawn_points = set()
+        min_distance = 10.0  # Minimum distance between pedestrians
+        
         for _ in range(num_pedestrians):
+            # Find a suitable spawn point
+            valid_spawn_point = None
+            max_attempts = 20
+            
+            for _ in range(max_attempts):
+                candidate_point = np.random.choice(spawn_points)
+                
+                # Check distance from other pedestrians
+                is_valid = True
+                for used_point in used_spawn_points:
+                    if candidate_point.location.distance(used_point.location) < min_distance:
+                        is_valid = False
+                        break
+                
+                if is_valid:
+                    valid_spawn_point = candidate_point
+                    break
+            
+            if valid_spawn_point is None:
+                continue
+            
             # Randomly select pedestrian blueprint
             bp = np.random.choice(blueprint_library.filter('walker.pedestrian.*'))
             
-            # Try to spawn the pedestrian
-            spawn_point = np.random.choice(spawn_points)
-            spawn_point.location.z += 1  # Raise spawn point to avoid collision
-            walker = self.world.spawn_actor(bp, spawn_point)
+            # Adjust spawn point for pedestrians
+            valid_spawn_point.location.z += 1  # Raise spawn point to avoid collision
+            walker = self.world.spawn_actor(bp, valid_spawn_point)
             
             if walker is not None:
                 self.walkers.append(walker)
+                used_spawn_points.add(valid_spawn_point)
                 
                 # Set up AI controller for the walker
                 controller_bp = blueprint_library.find('controller.ai.walker')
                 controller = self.world.spawn_actor(controller_bp, carla.Transform(), walker)
                 controller.start()
-                controller.go_to_location(self.world.get_random_location_from_navigation())
+                
+                # Get a random location on the navigation mesh
+                target_location = self.world.get_random_location_from_navigation()
+                if target_location:
+                    controller.go_to_location(target_location)
+                    controller.set_max_speed(1.4)
     
     def _setup_traffic_lights(self):
         """Configure traffic lights in the scene"""
