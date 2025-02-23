@@ -14,6 +14,9 @@ class LaneSwitchingScenario:
         
     def setup(self):
         """Setup the lane switching scenario with a slower vehicle ahead"""
+        # Clean up any existing vehicles first
+        self.cleanup()
+        
         if not hasattr(self.env, 'vehicle') or self.env.vehicle is None:
             return
             
@@ -22,19 +25,23 @@ class LaneSwitchingScenario:
         ego_location = ego_transform.location
         ego_waypoint = self.world.get_map().get_waypoint(ego_location)
         
-        # Get waypoint ahead of ego vehicle
-        spawn_waypoint = ego_waypoint
-        distance = 0
+        # Calculate spawn point directly in front of ego vehicle
+        forward_vector = ego_transform.get_forward_vector()
         
-        # Find a suitable spawn point ahead
-        while distance < self.initial_distance:
-            next_waypoints = spawn_waypoint.next(5.0)  # Get waypoints 5m ahead
-            if not next_waypoints:
-                return
-            spawn_waypoint = next_waypoints[0]
-            distance = ego_location.distance(spawn_waypoint.transform.location)
+        # Create spawn transform
+        spawn_location = carla.Location(
+            x=ego_location.x + forward_vector.x * self.initial_distance,
+            y=ego_location.y + forward_vector.y * self.initial_distance,
+            z=ego_location.z + 0.5
+        )
         
-        # Create spawn transform at the waypoint
+        # Get the waypoint on the road at this location
+        spawn_waypoint = self.world.get_map().get_waypoint(spawn_location)
+        if spawn_waypoint is None:
+            print("Failed to find valid waypoint for spawn location")
+            return
+            
+        # Create spawn transform using waypoint (to ensure vehicle is on the road)
         spawn_transform = spawn_waypoint.transform
         spawn_transform.location.z += 0.5  # Lift slightly to avoid collision
         
@@ -49,34 +56,42 @@ class LaneSwitchingScenario:
         # Try to spawn the vehicle with collision checks
         slower_vehicle = None
         max_attempts = 5
+        spawn_offset = 0
         
-        for _ in range(max_attempts):
-            slower_vehicle = self.world.try_spawn_actor(vehicle_bp, spawn_transform)
+        for attempt in range(max_attempts):
+            # Adjust spawn point slightly forward on each attempt
+            current_spawn_transform = carla.Transform(
+                carla.Location(
+                    x=spawn_transform.location.x + forward_vector.x * spawn_offset,
+                    y=spawn_transform.location.y + forward_vector.y * spawn_offset,
+                    z=spawn_transform.location.z
+                ),
+                spawn_transform.rotation
+            )
+            
+            # Try to spawn
+            slower_vehicle = self.world.try_spawn_actor(vehicle_bp, current_spawn_transform)
             if slower_vehicle is not None:
                 break
-            # If spawn failed, try a bit further ahead
-            next_waypoints = spawn_waypoint.next(5.0)
-            if not next_waypoints:
-                break
-            spawn_waypoint = next_waypoints[0]
-            spawn_transform = spawn_waypoint.transform
-            spawn_transform.location.z += 0.5
+                
+            spawn_offset += 5.0  # Try 5 meters further on next attempt
+            print(f"Spawn attempt {attempt + 1} failed, trying {spawn_offset}m further")
         
         if slower_vehicle is not None:
             self.other_vehicles.append(slower_vehicle)
             
-            # Set up the slower vehicle's behavior
-            slower_vehicle.set_autopilot(True)
+            # Important: Don't set autopilot, we want full control
+            slower_vehicle.set_autopilot(False)
             
-            # Get forward vector for velocity
-            forward_vector = spawn_transform.get_forward_vector()
-            
-            # Set target velocity for slower vehicle
+            # Set initial velocity to target speed
             target_speed_ms = self.target_speed / 3.6  # Convert km/h to m/s
+            
+            # Set velocity in the direction of the road
+            road_direction = spawn_transform.get_forward_vector()
             slower_vehicle.set_target_velocity(
                 carla.Vector3D(
-                    x=forward_vector.x * target_speed_ms,
-                    y=forward_vector.y * target_speed_ms,
+                    x=road_direction.x * target_speed_ms,
+                    y=road_direction.y * target_speed_ms,
                     z=0
                 )
             )
@@ -84,15 +99,30 @@ class LaneSwitchingScenario:
             # Add velocity controller to maintain slow speed
             self._setup_velocity_control(slower_vehicle)
             
-            print(f"Successfully spawned slower vehicle at distance: {distance:.1f}m")
+            # Debug information
+            actual_distance = ego_location.distance(slower_vehicle.get_location())
+            print(f"Successfully spawned slower vehicle:")
+            print(f"- Distance from ego: {actual_distance:.1f}m")
+            print(f"- Target speed: {self.target_speed} km/h")
+            print(f"- Spawn offset used: {spawn_offset}m")
+            
+            # Verify vehicle is in front
+            relative_location = slower_vehicle.get_location() - ego_location
+            angle = np.arctan2(relative_location.y, relative_location.x)
+            ego_yaw = np.radians(ego_transform.rotation.yaw)
+            angle_diff = np.abs(angle - ego_yaw)
+            print(f"- Relative angle: {np.degrees(angle_diff):.1f} degrees")
         else:
-            print("Failed to spawn slower vehicle after multiple attempts")
+            raise ValueError("Failed to spawn slower vehicle after multiple attempts")
     
     def _setup_velocity_control(self, vehicle):
         """Setup a velocity controller for the vehicle"""
+        if not hasattr(self, '_tick_callbacks'):
+            self._tick_callbacks = []
+            
         def velocity_control(weak_vehicle):
             vehicle = weak_vehicle()
-            if vehicle is None:
+            if vehicle is None or not vehicle.is_alive:
                 return
                 
             # Get current velocity
@@ -100,18 +130,49 @@ class LaneSwitchingScenario:
             speed_ms = np.sqrt(velocity.x**2 + velocity.y**2)
             target_speed_ms = self.target_speed / 3.6
             
-            # Adjust throttle to maintain target speed
-            if speed_ms < target_speed_ms:
-                vehicle.apply_control(carla.VehicleControl(throttle=0.5))
+            # PID-like control for better speed maintenance
+            speed_error = target_speed_ms - speed_ms
+            
+            # Proportional control
+            Kp = 0.5
+            throttle = Kp * speed_error
+            
+            # Clamp throttle and add brake control
+            if throttle > 0:
+                throttle = min(max(throttle, 0.0), 1.0)
+                brake = 0.0
             else:
-                vehicle.apply_control(carla.VehicleControl(throttle=0.0))
+                throttle = 0.0
+                brake = min(max(-throttle, 0.0), 1.0)
+            
+            # Get vehicle's waypoint for steering
+            waypoint = self.world.get_map().get_waypoint(vehicle.get_location())
+            vehicle_transform = vehicle.get_transform()
+            
+            # Calculate steering to stay in lane
+            next_waypoint = waypoint.next(2.0)[0]
+            direction = next_waypoint.transform.location - vehicle_transform.location
+            forward = vehicle_transform.get_forward_vector()
+            
+            # Calculate steering angle
+            steering = np.arctan2(direction.y, direction.x) - np.arctan2(forward.y, forward.x)
+            steering = np.clip(steering, -1.0, 1.0)
+            
+            # Apply control
+            control = carla.VehicleControl(
+                throttle=float(throttle),
+                brake=float(brake),
+                steer=float(steering)
+            )
+            vehicle.apply_control(control)
         
         # Create weak reference to avoid circular reference
         import weakref
         weak_vehicle = weakref.ref(vehicle)
         
-        # Add tick callback
-        self.world.on_tick(lambda _: velocity_control(weak_vehicle))
+        # Add tick callback and store its ID
+        callback_id = self.world.on_tick(lambda _: velocity_control(weak_vehicle))
+        self._tick_callbacks.append(callback_id)
     
     def get_scenario_specific_obs(self):
         """Get scenario-specific observations"""
@@ -179,19 +240,51 @@ class LaneSwitchingScenario:
         ego_velocity = ego_vehicle.get_velocity()
         ego_speed = np.sqrt(ego_velocity.x**2 + ego_velocity.y**2)
         
-        # Scenario is complete if:
-        # 1. Successfully passed the slower vehicle (negative x distance)
+        # Get ego vehicle's waypoint for lane check
+        ego_waypoint = self.world.get_map().get_waypoint(ego_transform.location)
+        lead_waypoint = self.world.get_map().get_waypoint(lead_transform.location)
+        
+        # More comprehensive completion criteria:
+        # 1. Successfully passed the slower vehicle
         # 2. Maintained safe distance
         # 3. Achieved higher speed
+        # 4. Completed the overtaking maneuver (returned to original lane)
+        # 5. Maintained stable control for some time
+        passed_vehicle = relative_location.x < 0
+        safe_distance = distance > self.safe_distance
+        higher_speed = ego_speed > (self.target_speed / 3.6)
+        same_lane = ego_waypoint.lane_id == lead_waypoint.lane_id
+        
         return (
-            relative_location.x < 0 and  # Passed the vehicle
-            distance > self.safe_distance and  # Safe distance
-            ego_speed > (self.target_speed / 3.6)  # Higher speed
+            passed_vehicle and
+            safe_distance and
+            higher_speed and
+            same_lane and
+            distance > self.initial_distance  # Ensure full overtake
         )
     
     def cleanup(self):
         """Clean up the scenario"""
+        # Remove tick callbacks first
+        if hasattr(self, '_tick_callbacks'):
+            for callback_id in self._tick_callbacks:
+                try:
+                    self.world.remove_on_tick(callback_id)
+                except:
+                    pass
+            self._tick_callbacks = []
+        
+        # Destroy all spawned vehicles
         for vehicle in self.other_vehicles:
-            if vehicle.is_alive:
-                vehicle.destroy()
-        self.other_vehicles.clear() 
+            if vehicle is not None and vehicle.is_alive:
+                try:
+                    vehicle.set_autopilot(False)  # Disable autopilot before destroying
+                    vehicle.destroy()
+                except:
+                    print(f"Warning: Failed to destroy vehicle {vehicle.id}")
+        
+        # Clear the vehicles list
+        self.other_vehicles.clear()
+        
+        # Wait a tick to ensure cleanup
+        self.world.tick() 
