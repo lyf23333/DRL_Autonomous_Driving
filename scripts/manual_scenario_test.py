@@ -16,6 +16,7 @@ from src.trust.trust_interface import TrustInterface
 from scenarios.lane_switching import LaneSwitchingScenario
 from scenarios.urban_traffic import UrbanTrafficScenario
 from scenarios.obstacle_avoidance import ObstacleAvoidanceScenario
+from scenarios.emergency_braking import EmergencyBrakingScenario
 
 class ManualController:
     def __init__(self, env: CarlaEnv, scenario_class, trust_interface: TrustInterface):
@@ -235,7 +236,7 @@ class ManualController:
 def main():
     parser = argparse.ArgumentParser(description='Manual Scenario Testing')
     parser.add_argument('--scenario', type=str, default='obstacle_avoidance',
-                      choices=['lane_switching', 'urban_traffic', 'obstacle_avoidance'],
+                      choices=['lane_switching', 'urban_traffic', 'obstacle_avoidance', 'emergency_braking'],
                       help='Scenario to test')
     args = parser.parse_args()
     
@@ -243,7 +244,8 @@ def main():
     scenario_map = {
         'lane_switching': LaneSwitchingScenario,
         'urban_traffic': UrbanTrafficScenario,
-        'obstacle_avoidance': ObstacleAvoidanceScenario
+        'obstacle_avoidance': ObstacleAvoidanceScenario,
+        'emergency_braking': EmergencyBrakingScenario
     }
     
     # Initialize components
