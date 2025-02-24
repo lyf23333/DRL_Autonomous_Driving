@@ -22,6 +22,19 @@
             ],
             "console": "integratedTerminal",
             "justMyCode": true
+        },
+        {
+            "name": "train ppo urban traffic",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/train.py",
+            "args": [
+                "--scenario=urban_traffic",
+                "--algorithm=ppo",
+                "--train"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
         }
     ]
 }
