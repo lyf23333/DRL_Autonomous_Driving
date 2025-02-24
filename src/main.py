@@ -26,16 +26,12 @@ def main():
     args = parse_args()
     
     # Initialize environment
-    env = CarlaEnv()
-    
-    # Initialize trust interface
-    trust_interface = TrustInterface()
+    env = CarlaEnv(trust_interface=TrustInterface())
     
     # Initialize DRL agent
     agent = DRLAgent(
         env=env,
         algorithm=args.algorithm,
-        trust_interface=trust_interface
     )
     
     # Load appropriate scenario
@@ -69,7 +65,6 @@ def main():
     finally:
         # Cleanup
         env.close()
-        trust_interface.cleanup()
 
 if __name__ == '__main__':
     main() 

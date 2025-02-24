@@ -2,11 +2,14 @@ import carla
 import gym
 import numpy as np
 from gym import spaces
+from .trust_interface import TrustInterface
+
 
 class CarlaEnv(gym.Env):
     """Custom Carla environment that follows gym interface"""
     
-    def __init__(self, town='Town01', port=2000):
+    def __init__(self, town='Town01', port=2000, trust_interface: TrustInterface | None = None):
+        self._initialized = False
         super(CarlaEnv, self).__init__()
         
         # Connect to CARLA server
@@ -103,6 +106,9 @@ class CarlaEnv(gym.Env):
         if self.active_scenario:
             info['scenario_complete'] = self.active_scenario.check_scenario_completion()
         
+        if self.trust_interface:
+            self.trust_interface.update_display()
+        
         return obs, reward, done, info
     
     def _get_obs(self):
@@ -188,3 +194,6 @@ class CarlaEnv(gym.Env):
         
         if hasattr(self, 'vehicle'):
             self.vehicle.destroy() 
+
+        if self.trust_interface:
+            self.trust_interface.cleanup()

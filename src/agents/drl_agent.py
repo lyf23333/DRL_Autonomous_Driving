@@ -23,9 +23,8 @@ class TrustCallback(BaseCallback):
         return True
 
 class DRLAgent:
-    def __init__(self, env, algorithm='ppo', trust_interface=None):
+    def __init__(self, env, algorithm='ppo'):
         self.env = env
-        self.trust_interface = trust_interface
         self.algorithm = algorithm.lower()
         
         # Set up model paths
@@ -70,7 +69,7 @@ class DRLAgent:
         self.env.set_scenario(scenario, scenario_config)
         
         # Create callback for trust adaptation
-        callback = TrustCallback(self.trust_interface)
+        callback = TrustCallback(self.env.trust_interface)
         
         try:
             # Start training
@@ -121,10 +120,6 @@ class DRLAgent:
                     # Check scenario completion
                     if info.get('scenario_complete', False):
                         completion_rate += 1
-                    
-                    # Update trust interface display
-                    if self.trust_interface:
-                        self.trust_interface.update_display()
                 
                 total_reward += episode_reward
                 print(f"Episode {episode + 1}/{n_episodes}: Reward = {episode_reward:.2f}")
