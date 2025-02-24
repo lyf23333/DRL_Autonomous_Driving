@@ -51,32 +51,34 @@ pip3 install -r requirements.txt
 ```
 
 4. **Set up Python Environment for this repo**
+```bash
 mkdir -p ~/git && cd ~/git
 git clone git@github.com:lyf23333/DRL_Autonomous_Driving.git
 pip3 install -r requirements.txt
-
+```
 
 ## Project Structure
 ```
 .
-├── scenarios/           # Predefined driving scenarios
+├── config/            # Configuration files
+├── scenarios/         # Predefined driving scenarios
+├── scripts/           # Utility scripts
 ├── src/
 │   ├── environment/    # CARLA environment wrapper
 │   ├── agents/        # DRL agents implementation
 │   ├── trust/         # Trust feedback and adaptation mechanisms
 │   └── utils/         # Utility functions
-├── config/            # Configuration files
 ├── data/             # Data collection and storage
-├── scripts/          # Utility scripts
 └── tests/            # Test cases
 ```
 
 ## Running Scenarios
 
-### Automated Training/Evaluation
+### Training/Evaluation
+Note: WIP
 ```bash
-python src/main.py --scenario [scenario_name] --algorithm [algorithm_name] --train
-python src/main.py --scenario [scenario_name] --algorithm [algorithm_name] --eval
+python3 src/main.py --scenario [scenario_name] --algorithm [algorithm_name] --train
+python3 src/main.py --scenario [scenario_name] --algorithm [algorithm_name] --eval
 ```
 
 ### Manual Scenario Testing
@@ -88,9 +90,14 @@ cd /opt/carla-simulator
 ./CarlaUE4.sh -quality-level=Low
 ```
 
-2. Run the manual testing script:
+2. Run the manual testing script, in which you can control the vehicle by keyboard:
 ```bash
-python scripts/manual_scenario_test.py --scenario [scenario_name]
+python3 scripts/manual_scenario_test.py --scenario [scenario_name]
+```
+
+3. Run the automatic testing script, in which the vehicle is controlled by a PID controller:
+```bash
+python3 scripts/automatic_scenario_test.py --scenario [scenario_name]
 ```
 
 Available scenarios:
@@ -116,10 +123,27 @@ The manual testing interface provides real-time information about:
 - Scenario completion status
 
 ## Trust Feedback Mechanisms
-The system collects trust-related feedback through:
-- Manual intervention monitoring
-- Real-time trust level inputs
-- Performance metrics tracking
+The system employs a multi-faceted approach to collect and adapt to trust-related feedback, which is crucial for personalizing the autonomous driving experience. The trust feedback mechanisms include:
+
+1. **Manual Intervention Monitoring**: 
+   - The system tracks instances where the user manually intervenes in the vehicle's operation. Frequent interventions may indicate a lower level of trust in the system's autonomous capabilities.
+   - These interventions are logged and analyzed to adjust the vehicle's behavior dynamically, aiming to reduce the need for future interventions.
+
+2. **Real-Time Trust Level Inputs**:
+   - Users can provide real-time feedback on their trust level through a user interface. This feedback is used to adjust the driving style, such as being more cautious or aggressive, depending on the user's comfort level.
+   - The system uses this input to fine-tune the reinforcement learning model, ensuring that the vehicle's behavior aligns with the user's trust preferences.
+
+3. **Performance Metrics Tracking**:
+   - The system continuously monitors various performance metrics, such as the vehicle's adherence to traffic rules, smoothness of driving, and response to dynamic obstacles.
+   - These metrics are used to infer the user's trust level indirectly. For example, consistent adherence to traffic rules may enhance trust, while erratic driving may diminish it.
+   - The feedback from these metrics is integrated into the learning algorithm to improve the vehicle's decision-making process.
+
+4. **Modeling Trust Feedback**:
+   - Trust feedback is modeled by associating specific driving behaviors with trust levels. For instance, frequent or abrupt braking is interpreted as a sign of low trust, prompting the system to adapt by driving more cautiously.
+   - The adaptation process involves smoothing out the driving style to gradually rebuild trust. This includes reducing sudden accelerations or decelerations and maintaining a safe distance from other vehicles.
+   - The reinforcement learning model is updated with these trust indicators, allowing the vehicle to learn and adjust its behavior in real-time to better match the user's trust level.
+
+The combination of these mechanisms allows the system to adaptively learn and respond to the user's trust level, enhancing the overall safety and comfort of the autonomous driving experience.
 
 ## Evaluation Scenarios
 1. Lane Switching
