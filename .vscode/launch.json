@@ -18,7 +18,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/scripts/manual_scenario_test.py",
             "args": [
-                "--scenario=lane_switching"
+                "--scenario=emergency_braking"
             ],
             "console": "integratedTerminal",
             "justMyCode": true
