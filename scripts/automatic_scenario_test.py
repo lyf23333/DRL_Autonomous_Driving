@@ -161,58 +161,103 @@ class ManualController:
         
         return True
 
-    def simple_pid_control(self, target_speed=30.0):
+    def simple_pid_control(self, target_speed=20.0):  # Reduced target speed for better control
         """Simple PID control for the vehicle"""
         if not hasattr(self.env, 'vehicle'):
             return np.array([0.0, 0.0])
             
+        # Calculate dt
+        current_time = self.env.world.get_snapshot().timestamp.elapsed_seconds
+        if hasattr(self, 'last_control_time'):
+            dt = current_time - self.last_control_time
+        else:
+            dt = 0.1  # Default dt for first iteration
+        self.last_control_time = current_time
+            
         # Get current speed
         velocity = self.env.vehicle.get_velocity()
-        speed = np.sqrt(velocity.x**2 + velocity.y**2)
+        speed = 3.6 * np.sqrt(velocity.x**2 + velocity.y**2)  # Convert to km/h
         
-        # PID parameters
-        Kp = 0.5
-        Ki = 0.1
-        Kd = 0.1
+        # PID parameters for speed control
+        Kp_speed = 0.5
+        Ki_speed = 0.1
+        Kd_speed = 0.1
         
         # Calculate error
         error = target_speed - speed
         
-        # Update integral and derivative terms
-        self.integral += error
+        # Anti-windup for integral term
+        max_integral = 10.0
+        self.integral = np.clip(self.integral + error, -max_integral, max_integral)
+        
+        # Calculate derivative with smoothing
         derivative = error - self.prev_error
         self.prev_error = error
         
-        # Calculate throttle/brake
-        control = Kp * error + Ki * self.integral + Kd * derivative
+        # Calculate longitudinal control
+        longitudinal = Kp_speed * error + Ki_speed * self.integral + Kd_speed * derivative
         
         # Convert to throttle/brake
-        if control > 0:
-            throttle = min(control, 1.0)
+        if longitudinal > 0:
+            throttle = np.clip(longitudinal, 0.0, 0.75)  # Limit maximum throttle
             brake = 0.0
         else:
             throttle = 0.0
-            brake = min(-control, 1.0)
+            brake = np.clip(-longitudinal, 0.0, 1.0)
             
-        # Simple steering based on waypoints
-        if hasattr(self.env, 'vehicle'):
-            waypoint = self.env.world.get_map().get_waypoint(self.env.vehicle.get_location())
-            next_waypoint = waypoint.next(2.0)[0]
+        # Waypoint following for steering
+        try:
+            # Get current waypoint and next waypoint
+            current_waypoint = self.env.world.get_map().get_waypoint(self.env.vehicle.get_location())
+            next_waypoint = current_waypoint.next(2.0)[0]
             
-            # Calculate steering
-            current_transform = self.env.vehicle.get_transform()
-            target_vector = next_waypoint.transform.location - current_transform.location
+            # Get vehicle transform
+            vehicle_transform = self.env.vehicle.get_transform()
+            
+            # Calculate vectors
+            forward_vector = vehicle_transform.get_forward_vector()
+            forward_vector = np.array([forward_vector.x, forward_vector.y])
+            forward_vector = forward_vector / np.linalg.norm(forward_vector)
+            
+            target_vector = next_waypoint.transform.location - vehicle_transform.location
             target_vector = np.array([target_vector.x, target_vector.y])
-            forward_vector = np.array([
-                np.cos(np.radians(current_transform.rotation.yaw)),
-                np.sin(np.radians(current_transform.rotation.yaw))
-            ])
+            target_vector = target_vector / np.linalg.norm(target_vector)
             
-            # Calculate cross product for steering
-            cross_product = np.cross(forward_vector, target_vector)
-            steering = np.clip(0.5 * cross_product, -1.0, 1.0)
-        else:
+            # Calculate dot product and cross product
+            dot = np.clip(np.dot(forward_vector, target_vector), -1.0, 1.0)
+            cross = np.cross(forward_vector, target_vector)
+            
+            # Calculate steering angle
+            angle = np.arccos(dot)
+            if cross < 0:
+                angle = -angle
+                
+            # PID parameters for steering
+            Kp_steer = 0.8
+            Kd_steer = 0.1
+            
+            # Calculate steering control
+            steering = Kp_steer * angle + Kd_steer * (angle / dt if dt > 0 else 0)
+            steering = np.clip(steering, -1.0, 1.0)
+            
+        except:
+            # Fallback to simple steering if waypoint calculation fails
             steering = 0.0
+        
+        # Add smoothing to prevent sudden changes
+        if hasattr(self, 'prev_steering'):
+            max_steering_change = 0.1
+            steering = np.clip(
+                steering,
+                self.prev_steering - max_steering_change,
+                self.prev_steering + max_steering_change
+            )
+        self.prev_steering = steering
+        
+        # Debug info
+        if self.steps % 20 == 0:  # Print every 20 steps
+            print(f"Speed: {speed:.1f} km/h, Target: {target_speed:.1f} km/h")
+            print(f"Throttle: {throttle:.2f}, Brake: {brake:.2f}, Steering: {steering:.2f}")
         
         return np.array([steering, throttle if throttle > 0 else -brake])
     
