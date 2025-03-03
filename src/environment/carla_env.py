@@ -66,9 +66,15 @@ class CarlaEnv(gym.Env):
             dt = 0.0
         self.last_step_time = current_time
         
+        # Get current speed for trust-based intervention
+        current_speed = 0.0
+        if self.vehicle is not None:
+            velocity = self.vehicle.get_velocity()
+            current_speed = 3.6 * np.sqrt(velocity.x**2 + velocity.y**2)  # Convert to km/h
+        
         # Check for trust-based intervention
         if self.trust_interface is not None and self._initialized:
-            should_intervene = self.trust_interface.should_intervene(current_time)
+            should_intervene = self.trust_interface.should_intervene(current_time, current_speed)
             if should_intervene:
                 # Override action with emergency brake
                 action = np.array([0.0, -1.0])  # No steering, full brake
@@ -102,8 +108,9 @@ class CarlaEnv(gym.Env):
         # Additional info
         info = {
             'trust_level': self.trust_interface.trust_level if self.trust_interface else 0.5,
-            'intervention_active': self.trust_interface.intervention_active,
+            'intervention_active': self.trust_interface.intervention_active if self.trust_interface else False,
             'recent_interventions': self.trust_interface.get_recent_interventions() if self.trust_interface else 0,
+            'current_speed': current_speed
         }
         
         # Add scenario-specific info

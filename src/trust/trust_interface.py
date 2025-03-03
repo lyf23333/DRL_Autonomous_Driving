@@ -29,6 +29,12 @@ class TrustInterface:
         self.trust_decrease_rate = 0.05  # Rate of trust decrease on intervention
         self.intervention_active = False
         
+        # Speed-based intervention parameters
+        self.speed_threshold_low = 10.0  # km/h - below this speed, reduced intervention probability
+        self.speed_threshold_high = 30.0  # km/h - above this speed, increased intervention probability
+        self.speed_factor_min = 0.01  # Minimum speed-based intervention factor
+        self.speed_factor_max = 0.2  # Maximum speed-based intervention factor
+        
         # Intervention tracking
         self.manual_interventions = []
         self.intervention_timestamps = []
@@ -41,18 +47,38 @@ class TrustInterface:
         os.makedirs(self.data_dir, exist_ok=True)
         self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-    def should_intervene(self, current_time, intervention_factor = 1.0):
-        """Determine if an intervention should occur based on trust level"""
+    def _calculate_speed_factor(self, current_speed):
+        """Calculate intervention factor based on current speed"""
+        if current_speed <= self.speed_threshold_low:
+            return self.speed_factor_min
+        elif current_speed >= self.speed_threshold_high:
+            return self.speed_factor_max
+        else:
+            # Linear interpolation between min and max factors
+            speed_range = self.speed_threshold_high - self.speed_threshold_low
+            speed_ratio = (current_speed - self.speed_threshold_low) / speed_range
+            return self.speed_factor_min + (self.speed_factor_max - self.speed_factor_min) * speed_ratio
+        
+    def should_intervene(self, current_time, current_speed=0.0):
+        """Determine if an intervention should occur based on trust level and vehicle speed"""
         # Check cooldown
         if current_time - self.last_intervention_time < self.intervention_cooldown:
             return False
             
-        # Probability of intervention increases as trust decreases
-        return random.random() < intervention_factor * (1 - self.trust_level)
+        # Calculate speed-based intervention factor
+        speed_factor = self._calculate_speed_factor(current_speed)
+        
+        # Base probability from trust level, modified by speed factor
+        base_prob = 1 - self.trust_level
+        intervention_prob = base_prob * speed_factor
+        
+        # Cap the final probability at 1.0
+        intervention_prob = min(1.0, intervention_prob)
+        
+        return random.random() < intervention_prob
     
     def update_trust(self, intervention, dt):
         """Update trust level based on interventions and smooth operation"""
-        self.intervention_active = intervention
         if intervention:
             # Decrease trust on intervention
             self.trust_level = max(0.0, self.trust_level - self.trust_decrease_rate)
@@ -141,4 +167,5 @@ class TrustInterface:
     def cleanup(self):
         """Clean up pygame resources"""
         self.save_session_data()
+        pygame.quit() 
         pygame.quit() 
