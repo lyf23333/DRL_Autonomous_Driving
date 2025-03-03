@@ -27,6 +27,7 @@ class TrustInterface:
         self.trust_level = 0.5  # Range: 0.0 to 1.0
         self.trust_increase_rate = 0.01  # Rate of trust increase during smooth operation
         self.trust_decrease_rate = 0.05  # Rate of trust decrease on intervention
+        self.intervention_active = False
         
         # Intervention tracking
         self.manual_interventions = []
@@ -43,7 +44,6 @@ class TrustInterface:
     def should_intervene(self, current_time, intervention_factor = 1.0):
         """Determine if an intervention should occur based on trust level"""
         # Check cooldown
-        print(f"dt: {current_time - self.last_intervention_time}")
         if current_time - self.last_intervention_time < self.intervention_cooldown:
             return False
             
@@ -57,9 +57,11 @@ class TrustInterface:
             self.trust_level = max(0.0, self.trust_level - self.trust_decrease_rate)
             self.last_intervention_time = self.world.get_snapshot().timestamp.elapsed_seconds
             self.record_intervention()
+            self.intervention_active = True
         else:
             # Gradually increase trust during smooth operation
             self.trust_level = min(1.0, self.trust_level + self.trust_increase_rate * dt)
+            self.intervention_active = False
     
     def record_intervention(self):
         """Record a manual intervention"""
