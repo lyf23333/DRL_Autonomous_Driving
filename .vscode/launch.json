@@ -13,13 +13,20 @@
             "justMyCode": true
         },
         {
-            "name": "manual control test",
+            "name": "Automatic control test",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/scripts/automatic_scenario_test.py",
-            "args": [
-                "--scenario=urban_traffic"
-            ],
+            "args": ["--scenario=urban_traffic"],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Manual control test",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/manual_scenario_test.py",
+            "args": ["--scenario=urban_traffic"],
             "console": "integratedTerminal",
             "justMyCode": true
         },
