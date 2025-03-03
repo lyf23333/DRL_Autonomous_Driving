@@ -52,16 +52,15 @@ class TrustInterface:
     
     def update_trust(self, intervention, dt):
         """Update trust level based on interventions and smooth operation"""
+        self.intervention_active = intervention
         if intervention:
             # Decrease trust on intervention
             self.trust_level = max(0.0, self.trust_level - self.trust_decrease_rate)
             self.last_intervention_time = self.world.get_snapshot().timestamp.elapsed_seconds
             self.record_intervention()
-            self.intervention_active = True
         else:
             # Gradually increase trust during smooth operation
             self.trust_level = min(1.0, self.trust_level + self.trust_increase_rate * dt)
-            self.intervention_active = False
     
     def record_intervention(self):
         """Record a manual intervention"""
