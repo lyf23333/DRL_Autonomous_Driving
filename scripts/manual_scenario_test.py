@@ -143,7 +143,6 @@ class AutomaticController:
         
         # Get pressed keys
         keys = pygame.key.get_pressed()
-        print(keys)
         
         # Steering
         if keys[pygame.K_LEFT]:
