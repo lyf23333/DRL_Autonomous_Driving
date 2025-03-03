@@ -90,12 +90,13 @@ cd /opt/carla-simulator
 ./CarlaUE4.sh -quality-level=Low
 ```
 
-2. Run the manual testing script, in which you can control the vehicle by keyboard:
+2. Run the manual testing script, in which you can control the vehicle by keyboard.
+In this case, you are in the role of the **RL agent/driver**, and the trust interface is automatically updated based on your driving behavior.
 ```bash
 python3 scripts/manual_scenario_test.py --scenario [scenario_name]
 ```
 
-3. Run the automatic testing script, in which the vehicle is controlled by a PID controller:
+3. Run the automatic testing script, in which the vehicle is controlled by a PID controller. In this case, you are in the role of the **human on the autonomous vehicle** and can provide real-time trust feedback to the RL agent by pressing space to brake. The agent is a PID controller that is set to adapt the speed based on the trust level.
 ```bash
 python3 scripts/automatic_scenario_test.py --scenario [scenario_name]
 ```

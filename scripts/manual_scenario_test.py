@@ -5,8 +5,10 @@ import os
 import argparse
 import pygame
 import numpy as np
+import matplotlib.pyplot as plt
 import carla
 from datetime import datetime
+from collections import deque
 
 # Add project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,10 +20,9 @@ from scenarios.urban_traffic import UrbanTrafficScenario
 from scenarios.obstacle_avoidance import ObstacleAvoidanceScenario
 from scenarios.emergency_braking import EmergencyBrakingScenario
 
-class ManualController:
-    def __init__(self, env: CarlaEnv, scenario_class, trust_interface: TrustInterface):
+class AutomaticController:
+    def __init__(self, env: CarlaEnv, scenario_class):
         self.env = env
-        self.trust_interface = trust_interface
         
         # Initialize pygame for keyboard control and display
         pygame.init()
@@ -44,6 +45,11 @@ class ManualController:
         # Create and setup scenario
         self.scenario = scenario_class(env)
         self.env.set_scenario(self.scenario)
+
+        # Trust plotting data
+        self.trust_history = deque(maxlen=1000)
+        self.time_history = deque(maxlen=1000)
+        self.start_time = datetime.now()
         
         # Control parameters
         self.steering = 0.0
@@ -58,58 +64,67 @@ class ManualController:
         # Camera setup
         self.camera = None
         self.camera_surface = None
-        self.setup_camera()
+        self._setup_camera()
+
+        # Simple PID control parameters
+        self.prev_error = 0
+        self.integral = 0
         
-    def setup_camera(self):
-        """Setup the ego vision camera"""
-        if not hasattr(self.env, 'vehicle') or self.env.vehicle is None:
-            return
+        # Initialize trust-based speed control
+        self.base_target_speed = 20.0  # km/h at max trust
+        self.min_target_speed = 0.0   # km/h at min trust
+        self.target_speed = self.base_target_speed
+
+    def run(self):
+        """Main control loop"""
+        try:
+            self.reset()
+            running = True
             
-        # Destroy existing camera if any
-        if self.camera is not None:
-            self.camera.destroy()
+            while running:
+                # Handle input and check if should continue
+                running = self._handle_input()
+                
+                # Create action array
+                action = np.array([
+                    self.steering,
+                    self.throttle if self.throttle > 0 else -self.brake
+                ])
+                if not running:
+                    break
+                
+                self.update_trust_based_speed()
+                
+                # Step environment
+                obs, reward, done, info = self.env.step(action)
+                self.episode_reward += reward
+                self.steps += 1
+                
+                # Update displays
+                self.display_info(info)
+                self._update_plots()
+                
+                # Check if episode is done
+                if done:
+                    print("\nEpisode finished!")
+                    print(f"Total steps: {self.steps}")
+                    print(f"Total reward: {self.episode_reward:.2f}")
+                    print(f"Average trust level: {info['trust_level']:.2f}")
+                    if info.get('scenario_complete', False):
+                        print("Scenario completed successfully!")
+                    self.reset()
+                
+                # Small delay to make control manageable
+                pygame.time.wait(50)
         
-        # Get the blueprint for the camera
-        camera_bp = self.env.world.get_blueprint_library().find('sensor.camera.rgb')
-        camera_bp.set_attribute('image_size_x', str(self.camera_width))
-        camera_bp.set_attribute('image_size_y', str(self.camera_height))
-        camera_bp.set_attribute('fov', '90')
-        
-        # Set the camera position relative to the vehicle
-        camera_transform = carla.Transform(
-            carla.Location(x=1.6, z=1.7),  # Position slightly above and forward of the hood
-            carla.Rotation(pitch=-15)       # Angle slightly downward
-        )
-        
-        # Spawn the camera
-        self.camera = self.env.world.spawn_actor(
-            camera_bp,
-            camera_transform,
-            attach_to=self.env.vehicle
-        )
-        
-        # Create surface for camera image
-        self.camera_surface = pygame.Surface((self.camera_width, self.camera_height))
-        
-        # Set up callback for camera data
-        self.camera.listen(self.process_camera_data)
-    
-    def process_camera_data(self, image):
-        """Process camera data and update display"""
-        # Convert CARLA raw image to pygame surface
-        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-        array = np.reshape(array, (image.height, image.width, 4))
-        array = array[:, :, :3]  # Remove alpha channel
-        array = array[:, :, ::-1]  # Convert from BGR to RGB
+        finally:
+            if self.camera is not None:
+                self.camera.destroy()
+            pygame.quit()
+            self.env.close()
+            self.env.trust_interface.cleanup()
 
-        # Create a pygame surface from the array
-        pygame_image = pygame.surfarray.make_surface(array.swapaxes(0, 1))
-        
-        # Blit the image onto the camera surface
-        self.camera_surface.blit(pygame_image, (0, 0))
-
-    
-    def handle_input(self):
+    def _handle_input(self):
         """Handle keyboard input"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -149,60 +164,21 @@ class ManualController:
             self.brake = 0.0
         
         return True
-    
+
+    def update_trust_based_speed(self):
+        """Calculate target speed based on trust level"""
+        # Linear interpolation between min and max speed based on trust
+        trust_level = self.env.trust_interface.trust_level
+        self.target_speed = self.min_target_speed + (self.base_target_speed - self.min_target_speed) * trust_level
+
     def reset(self):
         """Reset the environment and scenario"""
         self.env.reset()
         self.episode_reward = 0.0
         self.steps = 0
         self.start_time = datetime.now()
-        self.setup_camera()  # Reset camera when environment resets
-    
-    def run(self):
-        """Main control loop"""
-        try:
-            self.reset()
-            running = True
-            
-            while running:
-                # Handle input
-                running = self.handle_input()
-                
-                # Create action array
-                action = np.array([
-                    self.steering,
-                    self.throttle if self.throttle > 0 else -self.brake
-                ])
-                
-                # Step environment
-                obs, reward, done, info = self.env.step(action)
-                self.episode_reward += reward
-                self.steps += 1
-                
-                # Update displays
-                # self.trust_interface.update_display()
-                self.display_info(info)
-                
-                # Check if episode is done
-                if done:
-                    print("\nEpisode finished!")
-                    print(f"Total steps: {self.steps}")
-                    print(f"Total reward: {self.episode_reward:.2f}")
-                    print(f"Average trust level: {info['trust_level']:.2f}")
-                    if info.get('scenario_complete', False):
-                        print("Scenario completed successfully!")
-                    self.reset()
-                
-                # Small delay to make control manageable
-                pygame.time.wait(50)
-        
-        finally:
-            if self.camera is not None:
-                self.camera.destroy()
-            pygame.quit()
-            self.env.close()
-            self.trust_interface.cleanup()
-    
+        self._setup_camera()  # Reset camera when environment resets
+
     def display_info(self, info):
         """Display current control and scenario information"""
         # Clear info surface
@@ -213,10 +189,10 @@ class ManualController:
         
         # Display control info
         texts = [
-            f"Steering: {self.steering:.2f}",
-            f"Throttle: {self.throttle:.2f}",
-            f"Brake: {self.brake:.2f}",
             f"Trust Level: {info['trust_level']:.2f}",
+            f"Target Speed: {self.target_speed:.1f} km/h",
+            f"Current Speed: {self._get_current_speed():.1f} km/h",
+            f"Intervention Active: {'Yes' if self.env.trust_interface.intervention_active else 'No'}",
             f"Reward: {self.episode_reward:.2f}",
             f"Steps: {self.steps}",
             f"Time: {(datetime.now() - self.start_time).seconds}s"
@@ -232,6 +208,84 @@ class ManualController:
         self.screen.blit(self.info_surface, (0, self.camera_height))
         
         pygame.display.flip()
+
+    """
+    Helper functions
+    """
+
+    def _setup_camera(self):
+        """Setup the ego vision camera"""
+        if not hasattr(self.env, 'vehicle') or self.env.vehicle is None:
+            return
+            
+        # Destroy existing camera if any
+        if self.camera is not None:
+            self.camera.destroy()
+        
+        # Get the blueprint for the camera
+        camera_bp = self.env.world.get_blueprint_library().find('sensor.camera.rgb')
+        camera_bp.set_attribute('image_size_x', str(self.camera_width))
+        camera_bp.set_attribute('image_size_y', str(self.camera_height))
+        camera_bp.set_attribute('fov', '90')
+        
+        # Set the camera position relative to the vehicle
+        camera_transform = carla.Transform(
+            carla.Location(x=1.6, z=1.7),  # Position slightly above and forward of the hood
+            carla.Rotation(pitch=-15)       # Angle slightly downward
+        )
+        
+        # Spawn the camera
+        self.camera = self.env.world.spawn_actor(
+            camera_bp,
+            camera_transform,
+            attach_to=self.env.vehicle
+        )
+        
+        # Create surface for camera image
+        self.camera_surface = pygame.Surface((self.camera_width, self.camera_height))
+        
+        # Set up callback for camera data
+        self.camera.listen(self._process_camera_data)
+    
+    def _process_camera_data(self, image):
+        """Process camera data and update display"""
+        # Convert CARLA raw image to pygame surface
+        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        array = np.reshape(array, (image.height, image.width, 4))
+        array = array[:, :, :3]  # Remove alpha channel
+        array = array[:, :, ::-1]  # Convert from BGR to RGB
+
+        # Create a pygame surface from the array
+        pygame_image = pygame.surfarray.make_surface(array.swapaxes(0, 1))
+        
+        # Blit the image onto the camera surface
+        self.camera_surface.blit(pygame_image, (0, 0))
+
+    def _update_plots(self):
+        """Update trust history plots"""
+        current_time = (datetime.now() - self.start_time).total_seconds()
+        self.trust_history.append(self.env.trust_interface.trust_level)
+        self.time_history.append(current_time)
+        
+        # Create plot
+        plt.clf()
+        plt.plot(list(self.time_history), list(self.trust_history), 'g-')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Trust Level')
+        plt.title('Trust Level Over Time')
+        plt.grid(True)
+        plt.ylim(0, 1)
+        
+        # Save plot
+        plt.savefig('trust_plot.png')
+     
+    def _get_current_speed(self):
+        """Get current vehicle speed in km/h"""
+        if not hasattr(self.env, 'vehicle'):
+            return 0.0
+        
+        velocity = self.env.vehicle.get_velocity()
+        return 3.6 * np.sqrt(velocity.x**2 + velocity.y**2)  # Convert to km/h
 
 def main():
     parser = argparse.ArgumentParser(description='Manual Scenario Testing')
@@ -249,14 +303,12 @@ def main():
     }
     
     # Initialize components
-    env = CarlaEnv()
-    trust_interface = TrustInterface()
+    env = CarlaEnv(trust_interface = TrustInterface())
     
     # Create and run manual controller
-    controller = ManualController(
+    controller = AutomaticController(
         env=env,
-        scenario_class=scenario_map[args.scenario],
-        trust_interface=trust_interface
+        scenario_class=scenario_map[args.scenario]
     )
     
     print("\nManual Control Instructions:")

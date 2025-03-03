@@ -49,41 +49,10 @@ class CarlaEnv(gym.Env):
             )
         })
         
-        
     def set_scenario(self, scenario, config=None):
         """Set the active scenario for the environment"""
         self.active_scenario = scenario
         self.scenario_config = config
-        
-    def set_trust_interface(self, trust_interface):
-        """Set the trust interface for the environment"""
-        self.trust_interface = trust_interface
-        
-    def reset(self):
-        """Reset the environment to initial state"""
-        if not self._initialized:
-            self._initialized = True
-        # Reset the simulation
-        self.world.tick()
-        
-        # Reset trust-related variables
-        self.last_step_time = None
-        self.intervention_active = False
-        
-        # Spawn ego vehicle
-        blueprint_library = self.world.get_blueprint_library()
-        vehicle_bp = blueprint_library.find('vehicle.tesla.model3')
-        spawn_points = self.world.get_map().get_spawn_points()
-        
-        if len(spawn_points) > 0:
-            spawn_point = spawn_points[0]
-            self.vehicle = self.world.spawn_actor(vehicle_bp, spawn_point)
-        
-        # Setup active scenario if exists
-        if self.active_scenario:
-            self.active_scenario.setup()
-        
-        return self._get_obs()
     
     def step(self, action):
         """Execute one time step within the environment"""
@@ -103,13 +72,10 @@ class CarlaEnv(gym.Env):
             if should_intervene:
                 # Override action with emergency brake
                 action = np.array([0.0, -1.0])  # No steering, full brake
-                self.intervention_active = True
-            else:
-                self.intervention_active = False
             
             # Update trust level based on intervention and action smoothness
             self.trust_interface.update_trust(
-                intervention=self.intervention_active,
+                intervention=should_intervene,
                 dt=dt
             )
         
@@ -136,7 +102,7 @@ class CarlaEnv(gym.Env):
         # Additional info
         info = {
             'trust_level': self.trust_interface.trust_level if self.trust_interface else 0.5,
-            'intervention_active': self.intervention_active,
+            'intervention_active': self.trust_interface.intervention_active,
             'recent_interventions': self.trust_interface.get_recent_interventions() if self.trust_interface else 0,
         }
         
@@ -148,6 +114,31 @@ class CarlaEnv(gym.Env):
             self.trust_interface.update_display()
         
         return obs, reward, done, info
+
+    def reset(self):
+        """Reset the environment to initial state"""
+        if not self._initialized:
+            self._initialized = True
+        # Reset the simulation
+        self.world.tick()
+        
+        # Reset trust-related variables
+        self.last_step_time = None
+        
+        # Spawn ego vehicle
+        blueprint_library = self.world.get_blueprint_library()
+        vehicle_bp = blueprint_library.find('vehicle.tesla.model3')
+        spawn_points = self.world.get_map().get_spawn_points()
+        
+        if len(spawn_points) > 0:
+            spawn_point = spawn_points[0]
+            self.vehicle = self.world.spawn_actor(vehicle_bp, spawn_point)
+        
+        # Setup active scenario if exists
+        if self.active_scenario:
+            self.active_scenario.setup()
+        
+        return self._get_obs()
     
     def _get_obs(self):
         """Get current observation of the environment"""
@@ -204,7 +195,7 @@ class CarlaEnv(gym.Env):
         trust_reward = self.trust_interface.trust_level if self.trust_interface else 0.5
         
         # Penalty for interventions
-        intervention_penalty = -1.0 * self.intervention_active
+        intervention_penalty = -1.0 * self.trust_interface.intervention_active
         
         # Check scenario completion
         if self.active_scenario.check_scenario_completion():
