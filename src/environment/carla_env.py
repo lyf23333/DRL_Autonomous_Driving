@@ -2,13 +2,12 @@ import carla
 import gym
 import numpy as np
 from gym import spaces
-from .trust_interface import TrustInterface
 
 
 class CarlaEnv(gym.Env):
     """Custom Carla environment that follows gym interface"""
     
-    def __init__(self, town='Town01', port=2000, trust_interface: TrustInterface | None = None):
+    def __init__(self, town='Town01', port=2000, trust_interface = None):
         self._initialized = False
         super(CarlaEnv, self).__init__()
         
@@ -22,7 +21,7 @@ class CarlaEnv(gym.Env):
         self.scenario_config = None
         
         # Trust-related attributes
-        self.trust_interface = None
+        self.trust_interface = trust_interface
         self.last_step_time = None
         self.intervention_active = False
         
@@ -108,8 +107,11 @@ class CarlaEnv(gym.Env):
             else:
                 self.intervention_active = False
             
-            # Update trust level based on intervention and time delta
-            self.trust_interface.update_trust(self.intervention_active, dt)
+            # Update trust level based on intervention and action smoothness
+            self.trust_interface.update_trust(
+                intervention=self.intervention_active,
+                dt=dt
+            )
         
         # Apply action
         control = carla.VehicleControl(
@@ -135,7 +137,7 @@ class CarlaEnv(gym.Env):
         info = {
             'trust_level': self.trust_interface.trust_level if self.trust_interface else 0.5,
             'intervention_active': self.intervention_active,
-            'recent_interventions': self.trust_interface.get_recent_interventions() if self.trust_interface else 0
+            'recent_interventions': self.trust_interface.get_recent_interventions() if self.trust_interface else 0,
         }
         
         # Add scenario-specific info

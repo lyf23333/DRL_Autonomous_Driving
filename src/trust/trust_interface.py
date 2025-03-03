@@ -32,7 +32,7 @@ class TrustInterface:
         self.manual_interventions = []
         self.intervention_timestamps = []
         self.recent_intervention_window = 5.0  # seconds to consider an intervention "recent"
-        self.intervention_cooldown = 2.0  # minimum seconds between interventions
+        self.intervention_cooldown = 5.0  # minimum seconds between interventions
         self.last_intervention_time = 0.0
         
         # Setup data logging
@@ -40,14 +40,15 @@ class TrustInterface:
         os.makedirs(self.data_dir, exist_ok=True)
         self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-    def should_intervene(self, current_time):
+    def should_intervene(self, current_time, intervention_factor = 1.0):
         """Determine if an intervention should occur based on trust level"""
         # Check cooldown
+        print(f"dt: {current_time - self.last_intervention_time}")
         if current_time - self.last_intervention_time < self.intervention_cooldown:
             return False
             
         # Probability of intervention increases as trust decreases
-        return random.random() < (1 - self.trust_level)
+        return random.random() < intervention_factor * (1 - self.trust_level)
     
     def update_trust(self, intervention, dt):
         """Update trust level based on interventions and smooth operation"""

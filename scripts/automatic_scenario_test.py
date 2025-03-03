@@ -21,9 +21,8 @@ from scenarios.obstacle_avoidance import ObstacleAvoidanceScenario
 from scenarios.emergency_braking import EmergencyBrakingScenario
 
 class ManualController:
-    def __init__(self, env: CarlaEnv, scenario_class, trust_interface: TrustInterface):
+    def __init__(self, env: CarlaEnv, scenario_class):
         self.env = env
-        self.trust_interface = trust_interface
         
         # Initialize pygame for keyboard control and display
         pygame.init()
@@ -71,6 +70,12 @@ class ManualController:
         self.prev_error = 0
         self.integral = 0
         
+        # Initialize trust-based speed control
+        self.base_target_speed = 20.0  # km/h at max trust
+        self.min_target_speed = 0.0   # km/h at min trust
+        self.target_speed = self.base_target_speed
+        self.intervention_active = False
+
     def setup_camera(self):
         """Setup the ego vision camera"""
         if not hasattr(self.env, 'vehicle') or self.env.vehicle is None:
@@ -120,48 +125,37 @@ class ManualController:
         self.camera_surface.blit(pygame_image, (0, 0))
 
     
+    def update_trust_based_speed(self):
+        """Calculate target speed based on trust level"""
+        if not hasattr(self, 'trust_interface'):
+            return self.base_target_speed
+        
+        # Linear interpolation between min and max speed based on trust
+        trust_level = self.env.trust_interface.trust_level
+        self.target_speed = self.min_target_speed + (self.base_target_speed - self.min_target_speed) * trust_level
+
     def handle_input(self):
         """Handle keyboard input"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
-            
-            # Handle key press events
-            if event.type == pygame.KEYDOWN:
+            elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     return False
-                # Space for manual intervention
-                elif event.key == pygame.K_SPACE:
-                    self.trust_interface.record_intervention()
-                # R for reset
                 elif event.key == pygame.K_r:
                     self.reset()
-        
-        # Get pressed keys
-        keys = pygame.key.get_pressed()
-        
-        # Steering
-        if keys[pygame.K_LEFT]:
-            self.steering = max(-1.0, self.steering - 0.1)
-        elif keys[pygame.K_RIGHT]:
-            self.steering = min(1.0, self.steering + 0.1)
-        else:
-            self.steering = 0.0
-        
-        # Throttle/Brake
-        if keys[pygame.K_UP]:
-            self.throttle = min(1.0, self.throttle + 0.1)
-            self.brake = 0.0
-        elif keys[pygame.K_DOWN]:
-            self.brake = min(1.0, self.brake + 0.1)
-            self.throttle = 0.0
-        else:
-            self.throttle = 0.0
-            self.brake = 0.0
+                elif event.key == pygame.K_SPACE:
+                    # Record intervention and activate emergency brake
+                    self.intervention_active = True
+                    self.env.trust_interface.record_intervention()
+            elif event.type == pygame.KEYUP:
+                if event.key == pygame.K_SPACE:
+                    # Release emergency brake
+                    self.intervention_active = False
         
         return True
 
-    def simple_pid_control(self, target_speed=20.0):  # Reduced target speed for better control
+    def simple_pid_control(self):  # Reduced target speed for better control
         """Simple PID control for the vehicle"""
         if not hasattr(self.env, 'vehicle'):
             return np.array([0.0, 0.0])
@@ -184,7 +178,7 @@ class ManualController:
         Kd_speed = 0.1
         
         # Calculate error
-        error = target_speed - speed
+        error = self.target_speed - speed
         
         # Anti-windup for integral term
         max_integral = 10.0
@@ -256,7 +250,7 @@ class ManualController:
         
         # Debug info
         if self.steps % 20 == 0:  # Print every 20 steps
-            print(f"Speed: {speed:.1f} km/h, Target: {target_speed:.1f} km/h")
+            print(f"Speed: {speed:.1f} km/h, Target: {self.target_speed:.1f} km/h")
             print(f"Throttle: {throttle:.2f}, Brake: {brake:.2f}, Steering: {steering:.2f}")
         
         return np.array([steering, throttle if throttle > 0 else -brake])
@@ -276,9 +270,18 @@ class ManualController:
             running = True
             
             while running:
-                # Handle input
-                # Get automatic control action
-                action = self.simple_pid_control()
+                # Handle input and check if should continue
+                running = self.handle_input()
+                if not running:
+                    break
+                
+                if self.intervention_active:
+                    # Override with emergency brake during intervention
+                    action = np.array([0.0, -1.0])  # No steering, full brake
+                else:
+                    # Get automatic control action with trust-based speed
+                    self.update_trust_based_speed()
+                    action = self.simple_pid_control()
                 
                 # Step environment
                 obs, reward, done, info = self.env.step(action)
@@ -286,7 +289,6 @@ class ManualController:
                 self.steps += 1
                 
                 # Update displays
-                # self.trust_interface.update_display()
                 self.display_info(info)
                 self.update_plots()
                 
@@ -308,12 +310,12 @@ class ManualController:
                 self.camera.destroy()
             pygame.quit()
             self.env.close()
-            self.trust_interface.cleanup()
+            self.env.trust_interface.cleanup()
 
     def update_plots(self):
         """Update trust history plots"""
         current_time = (datetime.now() - self.start_time).total_seconds()
-        self.trust_history.append(self.trust_interface.trust_level)
+        self.trust_history.append(self.env.trust_interface.trust_level)
         self.time_history.append(current_time)
         
         # Create plot
@@ -336,12 +338,15 @@ class ManualController:
         # Create font
         font = pygame.font.Font(None, 36)
         
+        # Get current target speed
+        target_speed = self.update_trust_based_speed()
+        
         # Display control info
         texts = [
-            f"Steering: {self.steering:.2f}",
-            f"Throttle: {self.throttle:.2f}",
-            f"Brake: {self.brake:.2f}",
             f"Trust Level: {info['trust_level']:.2f}",
+            f"Target Speed: {target_speed:.1f} km/h",
+            f"Current Speed: {self.get_current_speed():.1f} km/h",
+            f"Intervention Active: {'Yes' if self.intervention_active else 'No'}",
             f"Reward: {self.episode_reward:.2f}",
             f"Steps: {self.steps}",
             f"Time: {(datetime.now() - self.start_time).seconds}s"
@@ -357,6 +362,14 @@ class ManualController:
         self.screen.blit(self.info_surface, (0, self.camera_height))
         
         pygame.display.flip()
+
+    def get_current_speed(self):
+        """Get current vehicle speed in km/h"""
+        if not hasattr(self.env, 'vehicle'):
+            return 0.0
+        
+        velocity = self.env.vehicle.get_velocity()
+        return 3.6 * np.sqrt(velocity.x**2 + velocity.y**2)  # Convert to km/h
 
 def main():
     parser = argparse.ArgumentParser(description='Manual Scenario Testing')
@@ -374,15 +387,12 @@ def main():
     }
     
     # Initialize components
-    env = CarlaEnv()
-    trust_interface = TrustInterface()
-    env.set_trust_interface(trust_interface)
+    env = CarlaEnv(trust_interface = TrustInterface())
     
     # Create and run manual controller
     controller = ManualController(
         env=env,
-        scenario_class=scenario_map[args.scenario],
-        trust_interface=trust_interface
+        scenario_class=scenario_map[args.scenario]
     )
     
     print("\nManual Control Instructions:")
