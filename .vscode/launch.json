@@ -16,9 +16,9 @@
             "name": "manual control test",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/scripts/manual_scenario_test.py",
+            "program": "${workspaceFolder}/scripts/automatic_scenario_test.py",
             "args": [
-                "--scenario=emergency_braking"
+                "--scenario=urban_traffic"
             ],
             "console": "integratedTerminal",
             "justMyCode": true
