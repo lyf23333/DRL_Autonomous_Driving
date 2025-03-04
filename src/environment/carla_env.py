@@ -32,14 +32,14 @@ class CarlaEnv(gym.Env):
             dtype=np.float32
         )
         
-        # Observation space includes vehicle state and intervention history
-        # but NOT trust level (agent shouldn't observe trust directly)
+        # Observation space includes vehicle state, path info, and intervention history
         self.observation_space = spaces.Dict({
             'vehicle_state': spaces.Box(
-                low=np.array([-np.inf, -np.inf, -np.inf, -np.inf]),  # [speed_x, speed_y, accel_x, accel_y]
-                high=np.array([np.inf, np.inf, np.inf, np.inf]),
+                low=np.array([-np.inf] * 12),
+                high=np.array([np.inf] * 12),
                 dtype=np.float32
-            ),
+            ),  # [speed_x, speed_y, accel_x, accel_y, angular_velocity, steering, throttle, brake, 
+                #  distance_to_waypoint, angle_to_waypoint, next_waypoint_x, next_waypoint_y]
             'recent_intervention': spaces.Discrete(2),  # Binary: 0 or 1
             'scenario_obs': spaces.Box(
                 low=-np.inf,
@@ -49,10 +49,20 @@ class CarlaEnv(gym.Env):
             )
         })
         
+        # Path following attributes
+        self.waypoints = []
+        self.current_waypoint_idx = 0
+        self.waypoint_threshold = 2.0  # meters
+        
     def set_scenario(self, scenario, config=None):
         """Set the active scenario for the environment"""
         self.active_scenario = scenario
         self.scenario_config = config
+    
+    def set_waypoints(self, waypoints):
+        """Set the waypoints for path following"""
+        self.waypoints = waypoints
+        self.current_waypoint_idx = 0
     
     def step(self, action):
         """Execute one time step within the environment"""
@@ -147,9 +157,9 @@ class CarlaEnv(gym.Env):
     
     def _get_obs(self):
         """Get current observation of the environment"""
-        if self.vehicle is None:
+        if not hasattr(self, 'vehicle') or self.vehicle is None:
             return {
-                'vehicle_state': np.zeros(4),
+                'vehicle_state': np.zeros(12),
                 'recent_intervention': 0,
                 'scenario_obs': np.zeros(20)
             }
@@ -157,13 +167,61 @@ class CarlaEnv(gym.Env):
         # Get vehicle state
         velocity = self.vehicle.get_velocity()
         acceleration = self.vehicle.get_acceleration()
+        angular_velocity = self.vehicle.get_angular_velocity()
+        control = self.vehicle.get_control()
+        
+        # Get path following info
+        distance_to_waypoint = float('inf')
+        angle_to_waypoint = 0.0
+        next_waypoint_x = 0.0
+        next_waypoint_y = 0.0
+        
+        if self.waypoints and self.current_waypoint_idx < len(self.waypoints):
+            ego_transform = self.vehicle.get_transform()
+            ego_location = ego_transform.location
+            ego_forward = ego_transform.get_forward_vector()
+            
+            # Get next waypoint
+            next_waypoint = self.waypoints[self.current_waypoint_idx]
+            next_waypoint_x = next_waypoint.x
+            next_waypoint_y = next_waypoint.y
+            
+            # Calculate distance to waypoint
+            distance_to_waypoint = np.sqrt(
+                (ego_location.x - next_waypoint.x) ** 2 +
+                (ego_location.y - next_waypoint.y) ** 2
+            )
+            
+            # Calculate angle to waypoint
+            waypoint_vector = carla.Vector3D(
+                x=next_waypoint.x - ego_location.x,
+                y=next_waypoint.y - ego_location.y,
+                z=0.0
+            )
+            
+            # Calculate angle between forward vector and waypoint vector
+            dot = ego_forward.x * waypoint_vector.x + ego_forward.y * waypoint_vector.y
+            cross = ego_forward.x * waypoint_vector.y - ego_forward.y * waypoint_vector.x
+            angle_to_waypoint = np.arctan2(cross, dot)
+            
+            # Update waypoint index if close enough
+            if distance_to_waypoint < self.waypoint_threshold:
+                self.current_waypoint_idx += 1
         
         vehicle_state = np.array([
-            velocity.x, velocity.y,
-            acceleration.x, acceleration.y
+            velocity.x, velocity.y,              # Linear velocity
+            acceleration.x, acceleration.y,       # Linear acceleration
+            angular_velocity.z,                   # Angular velocity (yaw rate)
+            control.steer,                       # Current steering
+            control.throttle,                    # Current throttle
+            control.brake,                       # Current brake
+            distance_to_waypoint,                # Distance to next waypoint
+            angle_to_waypoint,                   # Angle to next waypoint
+            next_waypoint_x,                     # Next waypoint x coordinate
+            next_waypoint_y                      # Next waypoint y coordinate
         ])
         
-        # Get intervention state (binary indicator of recent intervention)
+        # Get intervention state
         recent_intervention = (
             self.trust_interface.get_intervention_observation()
             if self.trust_interface is not None else 0
@@ -175,7 +233,6 @@ class CarlaEnv(gym.Env):
         else:
             scenario_obs = np.zeros(20)
         
-        # Ensure scenario_obs has correct size
         scenario_obs = np.pad(
             scenario_obs,
             (0, 20 - len(scenario_obs)),
@@ -191,30 +248,74 @@ class CarlaEnv(gym.Env):
     
     def _calculate_reward(self):
         """Calculate reward based on current state"""
-        if not self.active_scenario:
+        if not hasattr(self, 'vehicle') or self.vehicle is None:
             return 0.0
             
-        # Basic reward components
-        progress_reward = 0.0  # Based on distance to goal
-        safety_reward = 0.0    # Based on distance to obstacles/vehicles
+        # Get current vehicle state
+        velocity = self.vehicle.get_velocity()
+        current_speed = 3.6 * np.sqrt(velocity.x**2 + velocity.y**2)  # km/h
+        acceleration = self.vehicle.get_acceleration()
+        current_accel = np.sqrt(acceleration.x**2 + acceleration.y**2)
+        
+        # Path following reward
+        path_reward = 0.0
+        if self.waypoints and self.current_waypoint_idx < len(self.waypoints):
+            ego_transform = self.vehicle.get_transform()
+            ego_location = ego_transform.location
+            next_waypoint = self.waypoints[self.current_waypoint_idx]
+            
+            # Distance to waypoint
+            distance = np.sqrt(
+                (ego_location.x - next_waypoint.x) ** 2 +
+                (ego_location.y - next_waypoint.y) ** 2
+            )
+            
+            # Reward for being close to waypoint
+            path_reward = 1.0 - min(1.0, distance / 10.0)  # Max distance of 10 meters
+            
+            # Additional reward for reaching waypoint
+            if distance < self.waypoint_threshold:
+                path_reward += 2.0
+        
+        # Progress reward (based on speed)
+        target_speed = 20.0  # km/h
+        speed_diff = abs(current_speed - target_speed)
+        progress_reward = 1.0 - min(1.0, speed_diff / target_speed)
+        
+        # Safety reward components
+        safety_reward = 0.0
+        if self.active_scenario:
+            danger_threshold = 5.0  # meters
+            min_distance = float('inf')
+            ego_location = self.vehicle.get_location()
+            
+            vehicles = self.world.get_actors().filter('vehicle.*')
+            for vehicle in vehicles:
+                if vehicle.id != self.vehicle.id:
+                    distance = ego_location.distance(vehicle.get_location())
+                    min_distance = min(min_distance, distance)
+            
+            if min_distance < danger_threshold:
+                safety_reward = -1.0 * (1.0 - min_distance / danger_threshold)
+        
+        # Comfort reward (penalize high acceleration and jerk)
+        max_comfortable_accel = 3.0  # m/s²
+        comfort_reward = -min(1.0, current_accel / max_comfortable_accel)
+        
+        # Trust-based reward
         trust_reward = self.trust_interface.trust_level if self.trust_interface else 0.5
         
-        # Penalty for interventions
-        intervention_penalty = -1.0 * self.trust_interface.intervention_active
+        # Intervention penalty
+        intervention_penalty = -2.0 if (self.trust_interface and self.trust_interface.intervention_active) else 0.0
         
-        # Check scenario completion
-        if self.active_scenario.check_scenario_completion():
-            completion_reward = 10.0
-        else:
-            completion_reward = 0.0
-        
-        # Combine rewards
+        # Combine rewards with weights
         total_reward = (
-            progress_reward +
-            safety_reward +
-            trust_reward +
-            intervention_penalty +
-            completion_reward
+            0.4 * path_reward +        # Weight for path following
+            0.2 * progress_reward +    # Weight for maintaining target speed
+            0.2 * safety_reward +      # Weight for safety distance
+            0.1 * comfort_reward +     # Weight for smooth driving
+            0.1 * trust_reward +       # Weight for trust level
+            intervention_penalty       # Full penalty for interventions
         )
         
         return total_reward
