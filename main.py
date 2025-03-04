@@ -1,12 +1,9 @@
 import argparse
-import os
 import sys
-from environment.carla_env import CarlaEnv
-from trust.trust_interface import TrustInterface
-from agents.drl_agent import DRLAgent
-from scenarios.lane_switching import LaneSwitchingScenario
-from scenarios.urban_traffic import UrbanTrafficScenario
-from scenarios.obstacle_avoidance import ObstacleAvoidanceScenario
+from src.environment.carla_env import CarlaEnv
+from src.trust.trust_interface import TrustInterface
+from src.agents.drl_agent import DRLAgent
+from scenarios import LaneSwitchingScenario, UrbanTrafficScenario, ObstacleAvoidanceScenario
 
 def parse_args():
     parser = argparse.ArgumentParser(description='DRL Autonomous Driving with Trust Adaptation')
