@@ -9,3 +9,4 @@ matplotlib==3.5.3
 pandas==1.3.5
 scikit-learn==1.0.2
 shimmy==0.2.1
+tensorboard==2.11.2

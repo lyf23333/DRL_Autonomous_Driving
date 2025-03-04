@@ -38,7 +38,7 @@ class DRLAgent:
         """Create the DRL model based on specified algorithm"""
         if self.algorithm == 'ppo':
             return PPO(
-                "MlpPolicy",
+                "MultiInputPolicy",
                 self.env,
                 verbose=1,
                 tensorboard_log="./tensorboard/"
@@ -60,11 +60,8 @@ class DRLAgent:
         else:
             raise ValueError(f"Unsupported algorithm: {self.algorithm}")
     
-    def train(self, scenario_class: Type, total_timesteps=100000, scenario_config=None):
+    def train(self, scenario, total_timesteps=100000, scenario_config=None):
         """Train the agent on a specific scenario"""
-        # Create scenario instance
-        scenario = scenario_class(self.env)
-        
         # Set scenario in environment
         self.env.set_scenario(scenario, scenario_config)
         
