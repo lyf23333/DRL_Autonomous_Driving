@@ -187,9 +187,27 @@ class AutomaticController:
         # Create font
         font = pygame.font.Font(None, 36)
         
+        # Draw trust level bar
+        bar_width = 200
+        bar_height = 20
+        x = 320
+        y = 15
+        
+        # Trust bar (green)
+        pygame.draw.rect(self.info_surface, (0, 0, 0), (x, y, bar_width, bar_height), 2)
+        fill_width = int(bar_width * info['trust_level'])
+        pygame.draw.rect(self.info_surface, (0, 255, 0), (x, y, fill_width, bar_height))
+        
+        # Intervention probability bar (red)
+        y = 55
+        pygame.draw.rect(self.info_surface, (0, 0, 0), (x, y, bar_width, bar_height), 2)
+        fill_width = int(bar_width * self.env.trust_interface.intervention_prob)
+        pygame.draw.rect(self.info_surface, (255, 0, 0), (x, y, fill_width, bar_height))
+        
         # Display control info
         texts = [
             f"Trust Level: {info['trust_level']:.2f}",
+            f"Intervention Prob: {self.env.trust_interface.intervention_prob:.2f}",
             f"Target Speed: {self.target_speed:.1f} km/h",
             f"Current Speed: {self._get_current_speed():.1f} km/h",
             f"Intervention Active: {'Yes' if self.env.trust_interface.intervention_active else 'No'}",

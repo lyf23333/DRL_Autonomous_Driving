@@ -33,14 +33,17 @@ class TrustInterface:
         self.speed_threshold_low = 10.0  # km/h - below this speed, reduced intervention probability
         self.speed_threshold_high = 30.0  # km/h - above this speed, increased intervention probability
         self.speed_factor_min = 0.01  # Minimum speed-based intervention factor
-        self.speed_factor_max = 0.2  # Maximum speed-based intervention factor
+        self.speed_factor_max = 0.5  # Maximum speed-based intervention factor
+        self.self_intervention_facor = 0.1
         
         # Intervention tracking
         self.manual_interventions = []
         self.intervention_timestamps = []
         self.recent_intervention_window = 5.0  # seconds to consider an intervention "recent"
-        self.intervention_cooldown = 5.0  # minimum seconds between interventions
+        self.intervention_cooldown = 2.0  # minimum seconds between interventions
         self.last_intervention_time = 0.0
+
+        self.intervention_prob = 0.0
         
         # Setup data logging
         self.data_dir = "data/trust_feedback"
@@ -69,13 +72,13 @@ class TrustInterface:
         speed_factor = self._calculate_speed_factor(current_speed)
         
         # Base probability from trust level, modified by speed factor
-        base_prob = 1 - self.trust_level
-        intervention_prob = base_prob * speed_factor
+        base_prob = (1 - self.trust_level) * self.self_intervention_facor
+        intervention_prob = max(base_prob , speed_factor)
         
         # Cap the final probability at 1.0
-        intervention_prob = min(1.0, intervention_prob)
+        self.intervention_prob = min(1.0, intervention_prob)
         
-        return random.random() < intervention_prob
+        return random.random() < self.intervention_prob
     
     def update_trust(self, intervention, dt):
         """Update trust level based on interventions and smooth operation"""

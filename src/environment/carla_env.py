@@ -116,9 +116,7 @@ class CarlaEnv(gym.Env):
         # Add scenario-specific info
         if self.active_scenario:
             info['scenario_complete'] = self.active_scenario.check_scenario_completion()
-        
-        if self.trust_interface:
-            self.trust_interface.update_display()
+
         
         return obs, reward, done, info
 
