@@ -7,7 +7,7 @@ The project focuses on adapting autonomous vehicle behavior based on user's disp
 
 ## Prerequisites
 - Ubuntu 20.04
-- Python 3.7
+- Python 3.8
 - CARLA Simulator 0.9.15
 - GPU with at least 8GB memory (recommended)
 
@@ -40,9 +40,10 @@ cd /opt/carla-simulator
 ```
 
 3. **Set up Python Environment**
+If you don't have miniconda installed, refer to [here](https://docs.conda.io/projects/conda/en/stable/user-guide/install/linux.html)
 ```bash
 # Create and activate virtual environment
-conda create -n carla python=3.9
+conda create -n carla python=3.8
 conda activate carla
 
 # Install dependencies
