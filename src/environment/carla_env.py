@@ -1,11 +1,11 @@
 import carla
-import gym
+import gymnasium as gym
 import numpy as np
-from gym import spaces
+from gymnasium import spaces
 
 
 class CarlaEnv(gym.Env):
-    """Custom Carla environment that follows gym interface"""
+    """Custom Carla environment that follows gymnasium interface"""
     
     def __init__(self, town='Town01', port=2000, trust_interface = None):
         self._initialized = False
@@ -24,6 +24,15 @@ class CarlaEnv(gym.Env):
         self.trust_interface = trust_interface
         self.last_step_time = None
         self.intervention_active = False
+        
+        # Target speed attributes
+        self.base_target_speed = 20.0  # km/h at max trust
+        self.min_target_speed = 5.0    # km/h at min trust
+        self.target_speed = self.base_target_speed  # Default to base speed
+        
+        # Sensor setup
+        self.sensors = {}
+        self._setup_sensors()
         
         # Set up action and observation spaces
         self.action_space = spaces.Box(
@@ -65,73 +74,66 @@ class CarlaEnv(gym.Env):
         self.current_waypoint_idx = 0
     
     def step(self, action):
-        """Execute one time step within the environment"""
-        # Get current time for trust updates
-        current_time = self.world.get_snapshot().timestamp.elapsed_seconds
-        
-        # Calculate dt for trust updates
-        if self.last_step_time is not None:
-            dt = current_time - self.last_step_time
-        else:
-            dt = 0.0
-        self.last_step_time = current_time
-        
-        # Get current speed for trust-based intervention
-        current_speed = 0.0
-        if self.vehicle is not None:
-            velocity = self.vehicle.get_velocity()
-            current_speed = 3.6 * np.sqrt(velocity.x**2 + velocity.y**2)  # Convert to km/h
-        
-        # Check for trust-based intervention
-        if self.trust_interface is not None and self._initialized:
-            should_intervene = self.trust_interface.should_intervene(current_time, current_speed)
-            if should_intervene:
-                # Override action with emergency brake
-                action = np.array([0.0, -1.0])  # No steering, full brake
+        """Take a step in the environment"""
+        if not hasattr(self, 'vehicle') or self.vehicle is None:
+            return self._get_obs(), 0.0, True, False, {}
             
-            # Update trust level based on intervention and action smoothness
-            self.trust_interface.update_trust(
-                intervention=should_intervene,
-                dt=dt
-            )
+        # Apply action to vehicle
+        control = carla.VehicleControl()
+        control.steer = float(np.clip(action[0], -1.0, 1.0))
         
-        # Apply action
-        control = carla.VehicleControl(
-            throttle=float(action[1]) if action[1] > 0 else 0,
-            brake=float(-action[1]) if action[1] < 0 else 0,
-            steer=float(action[0])
-        )
+        # Throttle and brake are combined in the second action value
+        throttle_brake = float(np.clip(action[1], -1.0, 1.0))
+        if throttle_brake >= 0.0:
+            control.throttle = throttle_brake
+            control.brake = 0.0
+        else:
+            control.throttle = 0.0
+            control.brake = -throttle_brake
+            
         self.vehicle.apply_control(control)
         
-        # Tick the simulation
+        # Update the world
         self.world.tick()
         
-        # Get new observation
-        obs = self._get_obs()
+        # Update trust-based target speed if trust interface is available
+        if self.trust_interface:
+            self._update_trust_based_speed()
         
         # Calculate reward
         reward = self._calculate_reward()
         
-        # Check if episode is done
-        done = self._is_done()
+        # Check if done
+        terminated = self._is_done()
+        truncated = False  # We don't use truncation in this environment
+        
+        # Get observation
+        obs = self._get_obs()
         
         # Additional info
         info = {
             'trust_level': self.trust_interface.trust_level if self.trust_interface else 0.5,
-            'intervention_active': self.trust_interface.intervention_active if self.trust_interface else False,
-            'recent_interventions': self.trust_interface.get_recent_interventions() if self.trust_interface else 0,
-            'current_speed': current_speed
+            'current_speed': 3.6 * np.sqrt(self.vehicle.get_velocity().x**2 + self.vehicle.get_velocity().y**2) if self.vehicle else 0.0,
+            'target_speed': self.target_speed
         }
         
-        # Add scenario-specific info
-        if self.active_scenario:
-            info['scenario_complete'] = self.active_scenario.check_scenario_completion()
+        return obs, reward, terminated, truncated, info
 
+    def reset(self, *, seed=None, options=None):
+        """Reset the environment
         
-        return obs, reward, done, info
-
-    def reset(self):
-        """Reset the environment"""
+        Args:
+            seed: The seed for random number generation
+            options: Additional options for environment reset
+            
+        Returns:
+            observation: The initial observation
+            info: Additional information
+        """
+        # Set random seed if provided
+        if seed is not None:
+            np.random.seed(seed)
+            
         # Destroy existing vehicle if any
         if hasattr(self, 'vehicle') and self.vehicle is not None:
             # First destroy sensors
@@ -194,7 +196,17 @@ class CarlaEnv(gym.Env):
         # Tick the world to update
         self.world.tick()
         
-        return self._get_obs()
+        # Get initial observation
+        obs = self._get_obs()
+        
+        # Additional info
+        info = {
+            'spawn_point': f"({spawn_point.location.x:.1f}, {spawn_point.location.y:.1f}, {spawn_point.location.z:.1f})",
+            'trust_level': self.trust_interface.trust_level if self.trust_interface else 0.5,
+            'target_speed': self.target_speed
+        }
+        
+        return obs, info
     
     def _get_obs(self):
         """Get current observation of the environment"""
@@ -286,6 +298,14 @@ class CarlaEnv(gym.Env):
             'recent_intervention': recent_intervention,
             'scenario_obs': scenario_obs
         }
+
+    def _update_trust_based_speed(self):
+        """Calculate target speed based on trust level"""
+        if self.trust_interface:
+            # Linear interpolation between min and max speed based on trust
+            trust_level = self.trust_interface.trust_level
+            self.target_speed = self.min_target_speed + (self.base_target_speed - self.min_target_speed) * trust_level
+
     
     def _calculate_reward(self):
         """Calculate reward based on current state"""
@@ -319,9 +339,9 @@ class CarlaEnv(gym.Env):
                 path_reward += 2.0
         
         # Progress reward (based on speed)
-        target_speed = 20.0  # km/h
-        speed_diff = abs(current_speed - target_speed)
-        progress_reward = 1.0 - min(1.0, speed_diff / target_speed)
+        # Use trust-based target speed instead of fixed value
+        speed_diff = abs(current_speed - self.target_speed)
+        progress_reward = 1.0 - min(1.0, speed_diff / max(1.0, self.target_speed))  # Avoid division by zero
         
         # Safety reward components
         safety_reward = 0.0
@@ -362,7 +382,11 @@ class CarlaEnv(gym.Env):
         return total_reward
     
     def _is_done(self):
-        """Check if episode is done"""
+        """Check if episode is terminated
+        
+        Returns:
+            bool: True if the episode should be terminated, False otherwise
+        """
             
         if self.active_scenario and self.active_scenario.check_scenario_completion():
             return True
@@ -370,12 +394,24 @@ class CarlaEnv(gym.Env):
         return False
     
     def close(self):
-        """Cleanup the environment"""
+        """Clean up resources when environment is closed"""
+        # Clean up sensors
+        if hasattr(self, 'sensors'):
+            for sensor in self.sensors.values():
+                if sensor and sensor.is_alive:
+                    sensor.destroy()
+            self.sensors = {}
+        
+        # Clean up vehicle
+        if hasattr(self, 'vehicle') and self.vehicle is not None:
+            if self.vehicle.is_alive:
+                self.vehicle.destroy()
+            self.vehicle = None
+        
+        # Clean up scenario
         if self.active_scenario:
             self.active_scenario.cleanup()
-        
-        if hasattr(self, 'vehicle'):
-            self.vehicle.destroy() 
 
+        # Clean up trust interface
         if self.trust_interface:
             self.trust_interface.cleanup()
