@@ -131,27 +131,68 @@ class CarlaEnv(gym.Env):
         return obs, reward, done, info
 
     def reset(self):
-        """Reset the environment to initial state"""
-        if not self._initialized:
-            self._initialized = True
-        # Reset the simulation
-        self.world.tick()
+        """Reset the environment"""
+        # Destroy existing vehicle if any
+        if hasattr(self, 'vehicle') and self.vehicle is not None:
+            # First destroy sensors
+            if hasattr(self, 'sensors'):
+                for sensor in self.sensors.values():
+                    if sensor.is_alive:
+                        sensor.destroy()
+                self.sensors = {}
+            
+            # Then destroy vehicle
+            if self.vehicle.is_alive:
+                self.vehicle.destroy()
+            self.vehicle = None
         
-        # Reset trust-related variables
-        self.last_step_time = None
-        
-        # Spawn ego vehicle
+        # Spawn vehicle
         blueprint_library = self.world.get_blueprint_library()
         vehicle_bp = blueprint_library.find('vehicle.tesla.model3')
-        spawn_points = self.world.get_map().get_spawn_points()
         
-        if len(spawn_points) > 0:
-            spawn_point = spawn_points[0]
-            self.vehicle = self.world.spawn_actor(vehicle_bp, spawn_point)
+        # Find a valid spawn point
+        spawn_points = self.world.get_map().get_spawn_points()
+        if not spawn_points:
+            raise ValueError("No spawn points available in the map")
+            
+        # Randomly select a spawn point
+        spawn_point = np.random.choice(spawn_points)
+        
+        # Try to spawn the vehicle
+        self.vehicle = self.world.try_spawn_actor(vehicle_bp, spawn_point)
+        
+        # If spawning failed (e.g., collision with existing object), try other spawn points
+        if self.vehicle is None:
+            # Try a few random spawn points
+            for _ in range(10):
+                spawn_point = np.random.choice(spawn_points)
+                self.vehicle = self.world.try_spawn_actor(vehicle_bp, spawn_point)
+                if self.vehicle is not None:
+                    break
+            
+            # If still failed, try all spawn points sequentially
+            if self.vehicle is None:
+                for spawn_point in spawn_points:
+                    self.vehicle = self.world.try_spawn_actor(vehicle_bp, spawn_point)
+                    if self.vehicle is not None:
+                        break
+            
+            # If all spawn points failed, raise an error
+            if self.vehicle is None:
+                raise RuntimeError("Failed to spawn vehicle at any spawn point")
+        
+        # Setup sensors
+        self._setup_sensors()
+        
+        # Reset waypoint tracking
+        self.current_waypoint_idx = 0
         
         # Setup active scenario if exists
         if self.active_scenario:
             self.active_scenario.setup()
+        
+        # Tick the world to update
+        self.world.tick()
         
         return self._get_obs()
     
