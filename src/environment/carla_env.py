@@ -32,7 +32,7 @@ class CarlaEnv(gym.Env):
         
         # Sensor setup
         self.sensors = {}
-        self._setup_sensors()
+        # self._setup_sensors()
         
         # Set up action and observation spaces
         self.action_space = spaces.Box(
@@ -184,7 +184,7 @@ class CarlaEnv(gym.Env):
                 raise RuntimeError("Failed to spawn vehicle at any spawn point")
         
         # Setup sensors
-        self._setup_sensors()
+        # self._setup_sensors()
         
         # Reset waypoint tracking
         self.current_waypoint_idx = 0
@@ -415,3 +415,76 @@ class CarlaEnv(gym.Env):
         # Clean up trust interface
         if self.trust_interface:
             self.trust_interface.cleanup()
+
+    def _setup_sensors(self):
+        """Setup sensors for the vehicle"""
+        if not hasattr(self, 'vehicle') or self.vehicle is None:
+            return
+            
+        # Clean up existing sensors if any
+        for sensor in self.sensors.values():
+            if sensor.is_alive:
+                sensor.destroy()
+        self.sensors = {}
+        
+        blueprint_library = self.world.get_blueprint_library()
+        
+        # RGB Camera setup
+        rgb_camera_bp = blueprint_library.find('sensor.camera.rgb')
+        rgb_camera_bp.set_attribute('image_size_x', '800')
+        rgb_camera_bp.set_attribute('image_size_y', '600')
+        rgb_camera_bp.set_attribute('fov', '90')
+        
+        # Attach RGB camera to vehicle
+        rgb_camera_transform = carla.Transform(carla.Location(x=1.5, z=2.4))
+        rgb_camera = self.world.spawn_actor(
+            rgb_camera_bp,
+            rgb_camera_transform,
+            attach_to=self.vehicle if hasattr(self, 'vehicle') else None
+        )
+        self.sensors['rgb_camera'] = rgb_camera
+        
+        # Depth Camera setup
+        depth_camera_bp = blueprint_library.find('sensor.camera.depth')
+        depth_camera_bp.set_attribute('image_size_x', '800')
+        depth_camera_bp.set_attribute('image_size_y', '600')
+        depth_camera_bp.set_attribute('fov', '90')
+        
+        # Attach depth camera to vehicle
+        depth_camera_transform = carla.Transform(carla.Location(x=1.5, z=2.4))
+        depth_camera = self.world.spawn_actor(
+            depth_camera_bp,
+            depth_camera_transform,
+            attach_to=self.vehicle if hasattr(self, 'vehicle') else None
+        )
+        self.sensors['depth_camera'] = depth_camera
+        
+        # LIDAR setup
+        lidar_bp = blueprint_library.find('sensor.lidar.ray_cast')
+        lidar_bp.set_attribute('channels', '32')
+        lidar_bp.set_attribute('points_per_second', '90000')
+        lidar_bp.set_attribute('rotation_frequency', '40')
+        lidar_bp.set_attribute('range', '20')
+        
+        # Attach LIDAR to vehicle
+        lidar_transform = carla.Transform(carla.Location(x=0.0, z=2.4))
+        lidar = self.world.spawn_actor(
+            lidar_bp,
+            lidar_transform,
+            attach_to=self.vehicle if hasattr(self, 'vehicle') else None
+        )
+        self.sensors['lidar'] = lidar
+        
+        # Collision sensor setup
+        collision_bp = blueprint_library.find('sensor.other.collision')
+        collision_sensor = self.world.spawn_actor(
+            collision_bp,
+            carla.Transform(),
+            attach_to=self.vehicle if hasattr(self, 'vehicle') else None
+        )
+        self.sensors['collision'] = collision_sensor
+        
+        # Set up sensor data callbacks
+        # These callbacks would store the sensor data for later use
+        # For simplicity, we're just setting up the sensors without callbacks
+        # In a real implementation, you would add callbacks to process sensor data
