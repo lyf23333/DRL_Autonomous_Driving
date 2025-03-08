@@ -7,7 +7,7 @@ from gymnasium import spaces
 class CarlaEnv(gym.Env):
     """Custom Carla environment that follows gymnasium interface"""
     
-    def __init__(self, town='Town01', port=2000, trust_interface = None):
+    def __init__(self, town='Town01', port=2000, trust_interface=None, render_mode=None):
         self._initialized = False
         super(CarlaEnv, self).__init__()
         
@@ -32,7 +32,29 @@ class CarlaEnv(gym.Env):
         
         # Sensor setup
         self.sensors = {}
-        # self._setup_sensors()
+        # Initialize sensor data storage
+        self.collision_detected = False
+        self.collision_impulse = np.zeros(3, dtype=np.float32)
+        
+        # Camera view setup
+        self.camera_width = 800
+        self.camera_height = 600
+        self.camera_image = None
+        self.render_mode = render_mode  # Can be None, 'human', or 'rgb_array'
+        self.pygame_initialized = False
+        self.screen = None
+        
+        # Only initialize pygame if render_mode is 'human'
+        if self.render_mode == 'human':
+            try:
+                import pygame
+                pygame.init()
+                self.screen = pygame.display.set_mode((self.camera_width, self.camera_height))
+                pygame.display.set_caption("CARLA Environment - Vehicle View")
+                self.pygame_initialized = True
+            except:
+                print("Warning: Pygame initialization failed. Camera view will not be displayed.")
+                self.pygame_initialized = False
         
         # Set up action and observation spaces
         self.action_space = spaces.Box(
@@ -57,11 +79,16 @@ class CarlaEnv(gym.Env):
                 dtype=np.float32
             )
         })
-        
+
         # Path following attributes
         self.waypoints = []
         self.current_waypoint_idx = 0
         self.waypoint_threshold = 2.0  # meters
+        self.path_length = 20  # Number of waypoints to generate
+        
+        # Generate initial random waypoints if vehicle is spawned
+        if hasattr(self, 'vehicle') and self.vehicle is not None:
+            self._generate_random_waypoints()
         
     def set_scenario(self, scenario, config=None):
         """Set the active scenario for the environment"""
@@ -95,6 +122,13 @@ class CarlaEnv(gym.Env):
         
         # Update the world
         self.world.tick()
+        
+        # Render if needed (but don't break training if rendering fails)
+        if self.render_mode is not None:
+            try:
+                self.render()
+            except Exception as e:
+                print(f"Warning: Rendering failed: {e}")
         
         # Update trust-based target speed if trust interface is available
         if self.trust_interface:
@@ -134,12 +168,19 @@ class CarlaEnv(gym.Env):
         if seed is not None:
             np.random.seed(seed)
             
+        # Reset sensor data
+        self.collision_detected = False
+        self.collision_impulse = np.zeros(3, dtype=np.float32)
+        
+        # Reset stuck detection
+        self.low_speed_counter = 0
+        
         # Destroy existing vehicle if any
         if hasattr(self, 'vehicle') and self.vehicle is not None:
             # First destroy sensors
             if hasattr(self, 'sensors'):
                 for sensor in self.sensors.values():
-                    if sensor.is_alive:
+                    if sensor and sensor.is_alive:
                         sensor.destroy()
                 self.sensors = {}
             
@@ -184,10 +225,13 @@ class CarlaEnv(gym.Env):
                 raise RuntimeError("Failed to spawn vehicle at any spawn point")
         
         # Setup sensors
-        # self._setup_sensors()
+        self._setup_sensors()
         
         # Reset waypoint tracking
         self.current_waypoint_idx = 0
+        
+        # Generate random waypoints for the new vehicle position
+        self._generate_random_waypoints()
         
         # Setup active scenario if exists
         if self.active_scenario:
@@ -387,14 +431,51 @@ class CarlaEnv(gym.Env):
         Returns:
             bool: True if the episode should be terminated, False otherwise
         """
+        # Check if vehicle exists
+        if not hasattr(self, 'vehicle') or self.vehicle is None:
+            return True
             
+        # Check if active scenario is completed
         if self.active_scenario and self.active_scenario.check_scenario_completion():
+            return True
+            
+        # Check if collision detected
+        if self.collision_detected:
+            print("Episode terminated: Collision detected")
+            return True
+            
+        # Check if vehicle reached the end of the path
+        if self.waypoints and self.current_waypoint_idx >= len(self.waypoints):
+            print("Episode terminated: Reached end of path")
+            return True
+            
+        # Check if vehicle is off-road
+        current_waypoint = self.world.get_map().get_waypoint(self.vehicle.get_location())
+        if current_waypoint is None:
+            print("Episode terminated: Vehicle is off-road")
+            return True
+            
+        # Check if vehicle is stuck (very low speed for extended time)
+        velocity = self.vehicle.get_velocity()
+        current_speed = 3.6 * np.sqrt(velocity.x**2 + velocity.y**2)  # km/h
+        
+        if not hasattr(self, 'low_speed_counter'):
+            self.low_speed_counter = 0
+            
+        if current_speed < 1.0:  # Less than 1 km/h
+            self.low_speed_counter += 1
+        else:
+            self.low_speed_counter = 0
+            
+        if self.low_speed_counter > 50:  # Stuck for too long
+            print("Episode terminated: Vehicle is stuck")
             return True
             
         return False
     
     def close(self):
         """Clean up resources when environment is closed"""
+        
         # Clean up sensors
         if hasattr(self, 'sensors'):
             for sensor in self.sensors.values():
@@ -415,6 +496,59 @@ class CarlaEnv(gym.Env):
         # Clean up trust interface
         if self.trust_interface:
             self.trust_interface.cleanup()
+            
+        # Clean up pygame
+        if hasattr(self, 'pygame_initialized') and self.pygame_initialized:
+            try:
+                import pygame
+                pygame.quit()
+                self.pygame_initialized = False
+            except:
+                pass
+
+    def _generate_random_waypoints(self):
+        """Generate random waypoints for path following"""
+        if not hasattr(self, 'vehicle') or self.vehicle is None:
+            return
+            
+        # Clear existing waypoints
+        self.waypoints = []
+        self.current_waypoint_idx = 0
+        
+        # Get the current waypoint on the road
+        current_waypoint = self.world.get_map().get_waypoint(self.vehicle.get_location())
+        if current_waypoint is None:
+            return
+            
+        # Generate a path by following the road
+        next_waypoint = current_waypoint
+        for _ in range(self.path_length):
+            # Get next waypoint along the road
+            next_waypoints = next_waypoint.next(5.0)  # 5 meters between waypoints
+            if not next_waypoints:
+                break
+                
+            # At intersections, randomly choose a direction
+            if len(next_waypoints) > 1:
+                next_waypoint = np.random.choice(next_waypoints)
+            else:
+                next_waypoint = next_waypoints[0]
+                
+            # Convert CARLA waypoint to a simple object with x, y attributes
+            # This is needed because the observation space expects simple coordinates
+            class SimpleWaypoint:
+                def __init__(self, x, y):
+                    self.x = x
+                    self.y = y
+                    
+            simple_waypoint = SimpleWaypoint(
+                next_waypoint.transform.location.x,
+                next_waypoint.transform.location.y
+            )
+            
+            self.waypoints.append(simple_waypoint)
+            
+        print(f"Generated {len(self.waypoints)} waypoints for path following")
 
     def _setup_sensors(self):
         """Setup sensors for the vehicle"""
@@ -429,62 +563,89 @@ class CarlaEnv(gym.Env):
         
         blueprint_library = self.world.get_blueprint_library()
         
-        # RGB Camera setup
-        rgb_camera_bp = blueprint_library.find('sensor.camera.rgb')
-        rgb_camera_bp.set_attribute('image_size_x', '800')
-        rgb_camera_bp.set_attribute('image_size_y', '600')
-        rgb_camera_bp.set_attribute('fov', '90')
-        
-        # Attach RGB camera to vehicle
-        rgb_camera_transform = carla.Transform(carla.Location(x=1.5, z=2.4))
-        rgb_camera = self.world.spawn_actor(
-            rgb_camera_bp,
-            rgb_camera_transform,
-            attach_to=self.vehicle if hasattr(self, 'vehicle') else None
-        )
-        self.sensors['rgb_camera'] = rgb_camera
-        
-        # Depth Camera setup
-        depth_camera_bp = blueprint_library.find('sensor.camera.depth')
-        depth_camera_bp.set_attribute('image_size_x', '800')
-        depth_camera_bp.set_attribute('image_size_y', '600')
-        depth_camera_bp.set_attribute('fov', '90')
-        
-        # Attach depth camera to vehicle
-        depth_camera_transform = carla.Transform(carla.Location(x=1.5, z=2.4))
-        depth_camera = self.world.spawn_actor(
-            depth_camera_bp,
-            depth_camera_transform,
-            attach_to=self.vehicle if hasattr(self, 'vehicle') else None
-        )
-        self.sensors['depth_camera'] = depth_camera
-        
-        # LIDAR setup
-        lidar_bp = blueprint_library.find('sensor.lidar.ray_cast')
-        lidar_bp.set_attribute('channels', '32')
-        lidar_bp.set_attribute('points_per_second', '90000')
-        lidar_bp.set_attribute('rotation_frequency', '40')
-        lidar_bp.set_attribute('range', '20')
-        
-        # Attach LIDAR to vehicle
-        lidar_transform = carla.Transform(carla.Location(x=0.0, z=2.4))
-        lidar = self.world.spawn_actor(
-            lidar_bp,
-            lidar_transform,
-            attach_to=self.vehicle if hasattr(self, 'vehicle') else None
-        )
-        self.sensors['lidar'] = lidar
-        
         # Collision sensor setup
         collision_bp = blueprint_library.find('sensor.other.collision')
         collision_sensor = self.world.spawn_actor(
             collision_bp,
             carla.Transform(),
-            attach_to=self.vehicle if hasattr(self, 'vehicle') else None
+            attach_to=self.vehicle
         )
         self.sensors['collision'] = collision_sensor
         
-        # Set up sensor data callbacks
-        # These callbacks would store the sensor data for later use
-        # For simplicity, we're just setting up the sensors without callbacks
-        # In a real implementation, you would add callbacks to process sensor data
+        # Set up collision sensor callback
+        collision_sensor.listen(lambda event: self._process_collision(event))
+        
+        # Only set up camera if rendering is enabled
+        if self.render_mode is not None:
+            # Camera setup for visualization
+            camera_bp = blueprint_library.find('sensor.camera.rgb')
+            camera_bp.set_attribute('image_size_x', str(self.camera_width))
+            camera_bp.set_attribute('image_size_y', str(self.camera_height))
+            camera_bp.set_attribute('fov', '90')
+            
+            # Set the camera position relative to the vehicle
+            camera_transform = carla.Transform(
+                carla.Location(x=1.6, z=1.7),  # Position slightly above and forward of the hood
+                carla.Rotation(pitch=-15)       # Angle slightly downward
+            )
+            
+            # Spawn the camera
+            camera = self.world.spawn_actor(
+                camera_bp,
+                camera_transform,
+                attach_to=self.vehicle
+            )
+            self.sensors['camera'] = camera
+            
+            # Set up camera callback
+            camera.listen(lambda image: self._process_camera_data(image))
+    
+    def _process_collision(self, event):
+        """Process collision events"""
+        # Set collision flag
+        self.collision_detected = True
+        
+        # Get collision details
+        collision_actor = event.other_actor
+        impulse = event.normal_impulse
+        intensity = np.sqrt(impulse.x**2 + impulse.y**2 + impulse.z**2)
+        
+        # Store collision information
+        self.collision_impulse = np.array([impulse.x, impulse.y, impulse.z])
+        
+        # Log collision details
+        actor_type = collision_actor.type_id if hasattr(collision_actor, 'type_id') else "unknown"
+        print(f"Collision detected with {actor_type}, intensity: {intensity:.2f}")
+
+    def _process_camera_data(self, image):
+        """Process camera data for visualization"""
+        self.camera_image = image
+
+    def render(self):
+        """Render the current environment state"""
+        if self.camera_image is None:
+            return None
+            
+        # Convert camera image to numpy array
+        array = np.frombuffer(self.camera_image.raw_data, dtype=np.dtype("uint8"))
+        array = np.reshape(array, (self.camera_image.height, self.camera_image.width, 4))
+        array = array[:, :, :3]  # Remove alpha channel
+        array = array[:, :, ::-1]  # Convert from BGR to RGB
+        
+        if self.render_mode == 'human' and self.pygame_initialized:
+            try:
+                import pygame
+                # Create pygame surface and display it
+                pygame_image = pygame.surfarray.make_surface(array.swapaxes(0, 1))
+                self.screen.blit(pygame_image, (0, 0))
+                pygame.display.flip()
+                
+                # Process pygame events to keep the window responsive
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit()
+                        self.pygame_initialized = False
+            except Exception as e:
+                print(f"Warning: Human rendering failed: {e}")
+                
+        return array  # Return the RGB array for 'rgb_array' mode
