@@ -15,6 +15,9 @@ class CarlaEnv(gym.Env):
         self.client = carla.Client('localhost', port)
         self.client.set_timeout(10.0)
         self.world = self.client.get_world()
+
+        self.step_count = 0
+        self.max_episode_steps = 1000
         
         # Scenario management
         self.active_scenario = None
@@ -137,9 +140,10 @@ class CarlaEnv(gym.Env):
         # Calculate reward
         reward = self._calculate_reward()
         
+        self.step_count += 1
+        
         # Check if done
-        terminated = self._is_done()
-        truncated = False  # We don't use truncation in this environment
+        terminated, truncated = self._is_done()
         
         # Get observation
         obs = self._get_obs()
@@ -148,7 +152,8 @@ class CarlaEnv(gym.Env):
         info = {
             'trust_level': self.trust_interface.trust_level if self.trust_interface else 0.5,
             'current_speed': 3.6 * np.sqrt(self.vehicle.get_velocity().x**2 + self.vehicle.get_velocity().y**2) if self.vehicle else 0.0,
-            'target_speed': self.target_speed
+            'target_speed': self.target_speed,
+            'step_count': self.step_count
         }
         
         return obs, reward, terminated, truncated, info
@@ -171,6 +176,9 @@ class CarlaEnv(gym.Env):
         # Reset sensor data
         self.collision_detected = False
         self.collision_impulse = np.zeros(3, dtype=np.float32)
+        
+        # Reset step counter
+        self.step_count = 0
         
         # Reset stuck detection
         self.low_speed_counter = 0
@@ -426,36 +434,36 @@ class CarlaEnv(gym.Env):
         return total_reward
     
     def _is_done(self):
-        """Check if episode is terminated
+        """Check if episode is terminated or truncated
         
         Returns:
-            bool: True if the episode should be terminated, False otherwise
+            terminated: True if the episode should be terminated
+            truncated: True if the episode should be truncated
         """
+        # Initialize return values
+        terminated = False
+        truncated = False
+        
         # Check if vehicle exists
         if not hasattr(self, 'vehicle') or self.vehicle is None:
-            return True
+            terminated = True
             
         # Check if active scenario is completed
         if self.active_scenario and self.active_scenario.check_scenario_completion():
-            return True
+            truncated = True
             
-        # Check if collision detected
-        if self.collision_detected:
-            print("Episode terminated: Collision detected")
-            return True
-            
-        # Check if vehicle reached the end of the path
+        # Check if vehicle reached the end of the path - TRUNCATE
         if self.waypoints and self.current_waypoint_idx >= len(self.waypoints):
-            print("Episode terminated: Reached end of path")
-            return True
+            print("Episode truncated: Reached end of path")
+            truncated = True
             
-        # Check if vehicle is off-road
+        # Check if vehicle is off-road - TERMINATE
         current_waypoint = self.world.get_map().get_waypoint(self.vehicle.get_location())
         if current_waypoint is None:
             print("Episode terminated: Vehicle is off-road")
-            return True
+            terminated = True
             
-        # Check if vehicle is stuck (very low speed for extended time)
+        # Check if vehicle is stuck (very low speed for extended time) - TERMINATE
         velocity = self.vehicle.get_velocity()
         current_speed = 3.6 * np.sqrt(velocity.x**2 + velocity.y**2)  # km/h
         
@@ -467,11 +475,21 @@ class CarlaEnv(gym.Env):
         else:
             self.low_speed_counter = 0
             
-        if self.low_speed_counter > 50:  # Stuck for too long
+        if self.low_speed_counter > 100:  # Stuck for too long
             print("Episode terminated: Vehicle is stuck")
-            return True
+            terminated = True
             
-        return False
+        # Check if maximum episode length reached - TRUNCATE
+        
+        if self.step_count >= self.max_episode_steps:
+            print(f"Episode truncated: Reached maximum episode length ({self.max_episode_steps} steps)")
+            truncated = True
+            
+        # Note: Collision is detected but doesn't end the episode
+        if self.collision_detected:
+            print("Collision detected but episode continues")
+            
+        return terminated, truncated
     
     def close(self):
         """Clean up resources when environment is closed"""
