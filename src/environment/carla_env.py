@@ -3,6 +3,7 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 import math
+import pygame
 
 
 class CarlaEnv(gym.Env):
@@ -71,7 +72,6 @@ class CarlaEnv(gym.Env):
         # Only initialize pygame if render_mode is True
         if self.render_mode:
             try:
-                import pygame
                 pygame.init()
                 # Create a taller screen to accommodate trust visualization
                 self.screen = pygame.display.set_mode((self.camera_width, self.camera_height + self.trust_viz_height))
@@ -116,6 +116,10 @@ class CarlaEnv(gym.Env):
         # Generate initial random waypoints if vehicle is spawned
         if hasattr(self, 'vehicle') and self.vehicle is not None:
             self._generate_random_waypoints()
+        
+        # Visualization settings
+        self.show_waypoints = True  # Flag to toggle waypoint visualization
+        self.waypoint_lookahead = 20  # Number of waypoints to show ahead
         
     def set_scenario(self, scenario, config=None):
         """Set the active scenario for the environment"""
@@ -585,7 +589,6 @@ class CarlaEnv(gym.Env):
         # Clean up pygame
         if hasattr(self, 'pygame_initialized') and self.pygame_initialized:
             try:
-                import pygame
                 pygame.quit()
                 self.pygame_initialized = False
             except:
@@ -703,42 +706,129 @@ class CarlaEnv(gym.Env):
         print(f"Collision detected with {actor_type}, intensity: {intensity:.2f}")
 
     def _process_camera_data(self, image):
-        """Process camera data for visualization"""
+        """Process camera data from sensor"""
         self.camera_image = image
-
+        
     def render(self):
-        """Render the current environment state"""
-        if self.camera_image is None:
-            return None
+        """Render the environment"""
+        if self.render_mode is None:
+            return
             
-        # Convert camera image to numpy array
-        array = np.frombuffer(self.camera_image.raw_data, dtype=np.dtype("uint8"))
-        array = np.reshape(array, (self.camera_image.height, self.camera_image.width, 4))
-        array = array[:, :, :3]  # Remove alpha channel
-        array = array[:, :, ::-1]  # Convert from BGR to RGB
+        if not self.pygame_initialized:
+            self._init_pygame()
+            
+        if self.camera_image is not None:
+            # Convert CARLA image to numpy array properly
+            array = np.frombuffer(self.camera_image.raw_data, dtype=np.dtype("uint8"))
+            array = np.reshape(array, (self.camera_image.height, self.camera_image.width, 4))
+            array = array[:, :, :3]  # Remove alpha channel
+            array = array[:, :, ::-1]  # Convert from BGR to RGB
+            
+            # Convert to pygame surface
+            pygame_image = pygame.surfarray.make_surface(array.swapaxes(0, 1))
+            
+            # Display the image
+            self.screen.blit(pygame_image, (0, 0))
+            
+            # Draw waypoints on camera view if enabled
+            if self.show_waypoints and self.waypoints and hasattr(self, 'vehicle') and self.vehicle:
+                self._render_waypoints_on_camera()
+            
+            # Draw trust visualization panel
+            self._render_trust_visualization()
+            
+            # Update the display
+            pygame.display.flip()
+            
+            # Process pygame events to keep the window responsive
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    self.pygame_initialized = False
+            
+            return array  # Return the RGB array for 'rgb_array' mode
         
-        if self.render_mode and self.pygame_initialized:
-            try:
-                import pygame
-                # Create pygame surface and display it
-                pygame_image = pygame.surfarray.make_surface(array.swapaxes(0, 1))
-                self.screen.blit(pygame_image, (0, 0))
-                
-                # Render trust visualization
-                self._render_trust_visualization()
-                
-                pygame.display.flip()
-                
-                # Process pygame events to keep the window responsive
-                for event in pygame.event.get():
-                    if event.type == pygame.QUIT:
-                        pygame.quit()
-                        self.pygame_initialized = False
-            except Exception as e:
-                print(f"Warning: Human rendering failed: {e}")
-                
-        return array  # Return the RGB array for 'rgb_array' mode
+        return None
+
+    def _render_waypoints_on_camera(self):
+        """Project and render waypoints onto the camera view"""
+        if not hasattr(self, 'vehicle') or self.vehicle is None:
+            return
+            
+        import pygame
+        import math
         
+        # Get camera parameters
+        camera_transform = self.sensors['camera'].get_transform()
+        camera_location = camera_transform.location
+        camera_rotation = camera_transform.rotation
+        
+        # Camera intrinsic parameters (approximated for a typical camera)
+        fov = 90.0  # Field of view in degrees
+        focal_length = self.camera_width / (2.0 * math.tan(math.radians(fov) / 2.0))
+        
+        # Get vehicle transform
+        vehicle_transform = self.vehicle.get_transform()
+        
+        # Calculate how many waypoints to show
+        start_idx = self.current_waypoint_idx
+        end_idx = min(start_idx + self.waypoint_lookahead, len(self.waypoints))
+        
+        # Draw each waypoint in the range
+        for i in range(start_idx, end_idx):
+            if i >= len(self.waypoints):
+                break
+                
+            waypoint = self.waypoints[i]
+            
+            # Create a 3D point for the waypoint
+            waypoint_location = carla.Location(x=waypoint.x, y=waypoint.y, z=0.5)  # Assuming z=0.5 (slightly above ground)
+            
+            # Transform waypoint to camera space
+            waypoint_location_world = waypoint_location
+            
+            # Calculate vector from camera to waypoint in world space
+            to_waypoint = waypoint_location_world - camera_location
+            
+            # Convert to camera local coordinates
+            forward = camera_rotation.get_forward_vector()
+            right = camera_rotation.get_right_vector()
+            up = camera_rotation.get_up_vector()
+            
+            # Project the vector onto camera axes
+            forward_proj = to_waypoint.x * forward.x + to_waypoint.y * forward.y + to_waypoint.z * forward.z
+            right_proj = to_waypoint.x * right.x + to_waypoint.y * right.y + to_waypoint.z * right.z
+            up_proj = to_waypoint.x * up.x + to_waypoint.y * up.y + to_waypoint.z * up.z
+            
+            # Skip points behind the camera
+            if forward_proj <= 0:
+                continue
+                
+            # Project to 2D screen space
+            screen_x = self.camera_width / 2 + focal_length * right_proj / forward_proj
+            screen_y = self.camera_height / 2 - focal_length * up_proj / forward_proj
+            
+            # Skip points outside the screen
+            if (screen_x < 0 or screen_x >= self.camera_width or 
+                screen_y < 0 or screen_y >= self.camera_height):
+                continue
+                
+            # Calculate marker size based on distance (closer = bigger)
+            marker_size = max(5, int(20.0 / (1.0 + 0.1 * forward_proj)))
+            
+            # Color based on index (current waypoint is red, future ones fade to yellow)
+            progress = float(i - start_idx) / max(1, self.waypoint_lookahead - 1)
+            color = (255, int(255 * progress), 0)  # Red to yellow gradient
+            
+            # Draw the waypoint marker
+            pygame.draw.circle(self.screen, color, (int(screen_x), int(screen_y)), marker_size)
+            
+            # Draw number for the first few waypoints
+            if i < start_idx + 5:  # Only number the first 5 visible waypoints
+                font = pygame.font.Font(None, 20)
+                text = font.render(str(i - start_idx + 1), True, (255, 255, 255))
+                self.screen.blit(text, (int(screen_x) - 5, int(screen_y) - 8))
+
     def _render_trust_visualization(self):
         """Render trust level visualization below the camera view"""
         if not self.pygame_initialized or not hasattr(self, 'font'):
