@@ -1,12 +1,14 @@
 import argparse
-import os
 import sys
-from environment.carla_env import CarlaEnv
-from trust.trust_interface import TrustInterface
-from agents.drl_agent import DRLAgent
-from scenarios.lane_switching import LaneSwitchingScenario
-from scenarios.urban_traffic import UrbanTrafficScenario
-from scenarios.obstacle_avoidance import ObstacleAvoidanceScenario
+import os
+
+# Add the project root to the Python path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from src.environment.carla_env import CarlaEnv
+from src.trust.trust_interface import TrustInterface
+from src.agents.drl_agent import DRLAgent
+from scenarios import LaneSwitchingScenario, UrbanTrafficScenario, ObstacleAvoidanceScenario
 
 def parse_args():
     parser = argparse.ArgumentParser(description='DRL Autonomous Driving with Trust Adaptation')
@@ -20,13 +22,15 @@ def parse_args():
                       help='Train the agent')
     parser.add_argument('--eval', action='store_true',
                       help='Evaluate the agent')
+    parser.add_argument('--render', action='store_true',
+                      help='Rendering mode')
     return parser.parse_args()
 
 def main():
     args = parse_args()
     
     # Initialize environment
-    env = CarlaEnv(trust_interface=TrustInterface())
+    env = CarlaEnv(trust_interface=TrustInterface(), render_mode=args.render)
     
     # Initialize DRL agent
     agent = DRLAgent(

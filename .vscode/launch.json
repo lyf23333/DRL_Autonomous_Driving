@@ -34,11 +34,12 @@
             "name": "train ppo urban traffic",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/scripts/train.py",
+            "program": "${workspaceFolder}/main.py",
             "args": [
                 "--scenario=urban_traffic",
                 "--algorithm=ppo",
-                "--train"
+                "--train",
+                "--render"
             ],
             "console": "integratedTerminal",
             "justMyCode": true

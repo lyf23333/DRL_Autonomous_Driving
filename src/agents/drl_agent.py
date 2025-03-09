@@ -10,7 +10,11 @@ Note: the drl part is not implemented and tested yet.
 """
 
 class TrustCallback(BaseCallback):
-    """Custom callback for tracking trust-related metrics during training"""
+    """Custom callback for tracking trust-related metrics during training
+    
+    TODO: Check whether we need this callback or not, as we already have
+    per environment step call back update in the `carla_env`, per policy update trust callback 
+    in the `drl_agent` seems to be redundant"""
     
     def __init__(self, trust_interface, verbose=0):
         super(TrustCallback, self).__init__(verbose)
@@ -38,10 +42,11 @@ class DRLAgent:
         """Create the DRL model based on specified algorithm"""
         if self.algorithm == 'ppo':
             return PPO(
-                "MlpPolicy",
+                "MultiInputPolicy",
                 self.env,
                 verbose=1,
-                tensorboard_log="./tensorboard/"
+                tensorboard_log="./tensorboard/",
+                n_epochs=5,
             )
         elif self.algorithm == 'sac':
             return SAC(
@@ -60,11 +65,8 @@ class DRLAgent:
         else:
             raise ValueError(f"Unsupported algorithm: {self.algorithm}")
     
-    def train(self, scenario_class: Type, total_timesteps=100000, scenario_config=None):
+    def train(self, scenario, total_timesteps=100000, scenario_config=None):
         """Train the agent on a specific scenario"""
-        # Create scenario instance
-        scenario = scenario_class(self.env)
-        
         # Set scenario in environment
         self.env.set_scenario(scenario, scenario_config)
         
@@ -75,7 +77,7 @@ class DRLAgent:
             # Start training
             self.model.learn(
                 total_timesteps=total_timesteps,
-                callback=callback
+                # callback=callback
             )
             
             # Save the trained model

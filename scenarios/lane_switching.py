@@ -14,12 +14,12 @@ class LaneSwitchingScenario:
         
     def setup(self):
         """Setup the lane switching scenario with a slower vehicle ahead"""
-        # Clean up any existing vehicles first
-        self.cleanup()
-        
         if not hasattr(self.env, 'vehicle') or self.env.vehicle is None:
             return
             
+        # Clean up any existing actors from previous runs
+        self.cleanup()
+        
         # Get ego vehicle's transform and waypoint
         ego_transform = self.env.vehicle.get_transform()
         ego_location = ego_transform.location
