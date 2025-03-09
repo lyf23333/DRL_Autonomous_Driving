@@ -232,17 +232,17 @@ class CarlaEnv(gym.Env):
         
         # Generate random waypoints for the new vehicle position
         self._generate_random_waypoints()
-        
+
         # Setup active scenario if exists
-        if self.active_scenario:
+        if self.active_scenario and not self.active_scenario.is_setup:
             self.active_scenario.setup()
-        
+
         # Tick the world to update
         self.world.tick()
-        
+
         # Get initial observation
         obs = self._get_obs()
-        
+
         # Additional info
         info = {
             'spawn_point': f"({spawn_point.location.x:.1f}, {spawn_point.location.y:.1f}, {spawn_point.location.z:.1f})",

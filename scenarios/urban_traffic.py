@@ -22,10 +22,17 @@ class UrbanTrafficScenario:
         self.world = env.world
         self.vehicles = []
         self.walkers = []
+        self._is_setup = False
+
+    @property
+    def is_setup(self):
+        return self._is_setup
         
     def setup(self):
         """Setup the urban traffic scenario"""
-        # Spawn ego vehicle (handled by env)
+        
+        # Clean up any existing actors from previous runs
+        self.cleanup()
         
         # Spawn other vehicles
         self._spawn_traffic_vehicles(num_vehicles=10)
@@ -35,6 +42,8 @@ class UrbanTrafficScenario:
         
         # Set up traffic lights
         self._setup_traffic_lights()
+
+        self._is_setup = True
     
     def _spawn_traffic_vehicles(self, num_vehicles):
         """Spawn traffic vehicles in the scene"""

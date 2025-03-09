@@ -45,7 +45,8 @@ class DRLAgent:
                 "MultiInputPolicy",
                 self.env,
                 verbose=1,
-                tensorboard_log="./tensorboard/"
+                tensorboard_log="./tensorboard/",
+                n_epochs=5,
             )
         elif self.algorithm == 'sac':
             return SAC(
@@ -76,7 +77,7 @@ class DRLAgent:
             # Start training
             self.model.learn(
                 total_timesteps=total_timesteps,
-                callback=callback
+                # callback=callback
             )
             
             # Save the trained model

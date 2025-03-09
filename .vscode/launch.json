@@ -38,7 +38,8 @@
             "args": [
                 "--scenario=urban_traffic",
                 "--algorithm=ppo",
-                "--train"
+                "--train",
+                "--render"
             ],
             "console": "integratedTerminal",
             "justMyCode": true
