@@ -2,6 +2,8 @@ import carla
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
+import math
+import pygame
 
 
 class CarlaEnv(gym.Env):
@@ -47,14 +49,36 @@ class CarlaEnv(gym.Env):
         self.pygame_initialized = False
         self.screen = None
         
+        # Trust visualization
+        self.trust_history = []
+        self.max_trust_history = 100  # Number of trust values to keep in history
+        self.trust_viz_height = 220  # Increased from 120 to 180 for more space
+        
+        # Reward visualization
+        self.reward_history = []
+        self.max_reward_history = 100  # Number of reward values to keep in history
+        self.episode_reward = 0.0      # Cumulative reward for current episode
+        
+        # Reward component tracking
+        self.reward_components = {
+            'path': 0.0,
+            'progress': 0.0,
+            'safety': 0.0,
+            'comfort': 0.0,
+            'trust': 0.0,
+            'intervention': 0.0
+        }
+        
         # Only initialize pygame if render_mode is True
         if self.render_mode:
             try:
-                import pygame
                 pygame.init()
-                self.screen = pygame.display.set_mode((self.camera_width, self.camera_height))
+                # Create a taller screen to accommodate trust visualization
+                self.screen = pygame.display.set_mode((self.camera_width, self.camera_height + self.trust_viz_height))
                 pygame.display.set_caption("CARLA Environment - Vehicle View")
                 self.pygame_initialized = True
+                # Initialize font for text rendering
+                self.font = pygame.font.SysFont('Arial', 16)
             except:
                 print("Warning: Pygame initialization failed. Camera view will not be displayed.")
                 self.pygame_initialized = False
@@ -92,6 +116,10 @@ class CarlaEnv(gym.Env):
         # Generate initial random waypoints if vehicle is spawned
         if hasattr(self, 'vehicle') and self.vehicle is not None:
             self._generate_random_waypoints()
+        
+        # Visualization settings
+        self.show_waypoints = True  # Flag to toggle waypoint visualization
+        self.waypoint_lookahead = 20  # Number of waypoints to show ahead
         
     def set_scenario(self, scenario, config=None):
         """Set the active scenario for the environment"""
@@ -136,9 +164,19 @@ class CarlaEnv(gym.Env):
         # Update trust-based target speed if trust interface is available
         if self.trust_interface:
             self._update_trust_based_speed()
+            # Update trust history for visualization
+            if len(self.trust_history) >= self.max_trust_history:
+                self.trust_history.pop(0)
+            self.trust_history.append(self.trust_interface.trust_level)
         
         # Calculate reward
         reward = self._calculate_reward()
+        
+        # Update reward history for visualization
+        self.episode_reward += reward
+        if len(self.reward_history) >= self.max_reward_history:
+            self.reward_history.pop(0)
+        self.reward_history.append(reward)
         
         self.step_count += 1
         
@@ -182,6 +220,23 @@ class CarlaEnv(gym.Env):
         
         # Reset stuck detection
         self.low_speed_counter = 0
+        
+        # Reset trust history
+        self.trust_history = []
+        
+        # Reset reward history
+        self.reward_history = []
+        self.episode_reward = 0.0
+        
+        # Reset reward components
+        self.reward_components = {
+            'path': 0.0,
+            'progress': 0.0,
+            'safety': 0.0,
+            'comfort': 0.0,
+            'trust': 0.0,
+            'intervention': 0.0
+        }
         
         # Destroy existing vehicle if any
         if hasattr(self, 'vehicle') and self.vehicle is not None:
@@ -422,13 +477,29 @@ class CarlaEnv(gym.Env):
         intervention_penalty = -2.0 if (self.trust_interface and self.trust_interface.intervention_active) else 0.0
         
         # Combine rewards with weights
+        path_reward_weighted = 0.4 * path_reward
+        progress_reward_weighted = 0.2 * progress_reward
+        safety_reward_weighted = 0.2 * safety_reward
+        comfort_reward_weighted = 0.1 * comfort_reward
+        trust_reward_weighted = 0.1 * trust_reward
+        
+        # Store reward components for visualization
+        self.reward_components = {
+            'path': path_reward_weighted,
+            'progress': progress_reward_weighted,
+            'safety': safety_reward_weighted,
+            'comfort': comfort_reward_weighted,
+            'trust': trust_reward_weighted,
+            'intervention': intervention_penalty
+        }
+        
         total_reward = (
-            0.4 * path_reward +        # Weight for path following
-            0.2 * progress_reward +    # Weight for maintaining target speed
-            0.2 * safety_reward +      # Weight for safety distance
-            0.1 * comfort_reward +     # Weight for smooth driving
-            0.1 * trust_reward +       # Weight for trust level
-            intervention_penalty       # Full penalty for interventions
+            path_reward_weighted +
+            progress_reward_weighted +
+            safety_reward_weighted +
+            comfort_reward_weighted +
+            trust_reward_weighted +
+            intervention_penalty
         )
         
         return total_reward
@@ -518,7 +589,6 @@ class CarlaEnv(gym.Env):
         # Clean up pygame
         if hasattr(self, 'pygame_initialized') and self.pygame_initialized:
             try:
-                import pygame
                 pygame.quit()
                 self.pygame_initialized = False
             except:
@@ -636,34 +706,309 @@ class CarlaEnv(gym.Env):
         print(f"Collision detected with {actor_type}, intensity: {intensity:.2f}")
 
     def _process_camera_data(self, image):
-        """Process camera data for visualization"""
+        """Process camera data from sensor"""
         self.camera_image = image
-
-    def render(self):
-        """Render the current environment state"""
-        if self.camera_image is None:
-            return None
-            
-        # Convert camera image to numpy array
-        array = np.frombuffer(self.camera_image.raw_data, dtype=np.dtype("uint8"))
-        array = np.reshape(array, (self.camera_image.height, self.camera_image.width, 4))
-        array = array[:, :, :3]  # Remove alpha channel
-        array = array[:, :, ::-1]  # Convert from BGR to RGB
         
-        if self.render_mode and self.pygame_initialized:
-            try:
-                import pygame
-                # Create pygame surface and display it
-                pygame_image = pygame.surfarray.make_surface(array.swapaxes(0, 1))
-                self.screen.blit(pygame_image, (0, 0))
-                pygame.display.flip()
+    def render(self):
+        """Render the environment"""
+        if self.render_mode is None:
+            return
+            
+        if not self.pygame_initialized:
+            self._init_pygame()
+            
+        if self.camera_image is not None:
+            # Convert CARLA image to numpy array properly
+            array = np.frombuffer(self.camera_image.raw_data, dtype=np.dtype("uint8"))
+            array = np.reshape(array, (self.camera_image.height, self.camera_image.width, 4))
+            array = array[:, :, :3]  # Remove alpha channel
+            array = array[:, :, ::-1]  # Convert from BGR to RGB
+            
+            # Convert to pygame surface
+            pygame_image = pygame.surfarray.make_surface(array.swapaxes(0, 1))
+            
+            # Display the image
+            self.screen.blit(pygame_image, (0, 0))
+            
+            # Draw waypoints on camera view if enabled
+            if self.show_waypoints and self.waypoints and hasattr(self, 'vehicle') and self.vehicle:
+                self._render_waypoints_on_camera()
+            
+            # Draw trust visualization panel
+            self._render_trust_visualization()
+            
+            # Update the display
+            pygame.display.flip()
+            
+            # Process pygame events to keep the window responsive
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    self.pygame_initialized = False
+            
+            return array  # Return the RGB array for 'rgb_array' mode
+        
+        return None
+
+    def _render_waypoints_on_camera(self):
+        """Project and render waypoints onto the camera view"""
+        if not hasattr(self, 'vehicle') or self.vehicle is None:
+            return
+            
+        import pygame
+        import math
+        
+        # Get camera parameters
+        camera_transform = self.sensors['camera'].get_transform()
+        camera_location = camera_transform.location
+        camera_rotation = camera_transform.rotation
+        
+        # Camera intrinsic parameters (approximated for a typical camera)
+        fov = 90.0  # Field of view in degrees
+        focal_length = self.camera_width / (2.0 * math.tan(math.radians(fov) / 2.0))
+        
+        # Get vehicle transform
+        vehicle_transform = self.vehicle.get_transform()
+        
+        # Calculate how many waypoints to show
+        start_idx = self.current_waypoint_idx
+        end_idx = min(start_idx + self.waypoint_lookahead, len(self.waypoints))
+        
+        # Draw each waypoint in the range
+        for i in range(start_idx, end_idx):
+            if i >= len(self.waypoints):
+                break
                 
-                # Process pygame events to keep the window responsive
-                for event in pygame.event.get():
-                    if event.type == pygame.QUIT:
-                        pygame.quit()
-                        self.pygame_initialized = False
-            except Exception as e:
-                print(f"Warning: Human rendering failed: {e}")
+            waypoint = self.waypoints[i]
+            
+            # Create a 3D point for the waypoint
+            waypoint_location = carla.Location(x=waypoint.x, y=waypoint.y, z=0.5)  # Assuming z=0.5 (slightly above ground)
+            
+            # Transform waypoint to camera space
+            waypoint_location_world = waypoint_location
+            
+            # Calculate vector from camera to waypoint in world space
+            to_waypoint = waypoint_location_world - camera_location
+            
+            # Convert to camera local coordinates
+            forward = camera_rotation.get_forward_vector()
+            right = camera_rotation.get_right_vector()
+            up = camera_rotation.get_up_vector()
+            
+            # Project the vector onto camera axes
+            forward_proj = to_waypoint.x * forward.x + to_waypoint.y * forward.y + to_waypoint.z * forward.z
+            right_proj = to_waypoint.x * right.x + to_waypoint.y * right.y + to_waypoint.z * right.z
+            up_proj = to_waypoint.x * up.x + to_waypoint.y * up.y + to_waypoint.z * up.z
+            
+            # Skip points behind the camera
+            if forward_proj <= 0:
+                continue
                 
-        return array  # Return the RGB array for 'rgb_array' mode
+            # Project to 2D screen space
+            screen_x = self.camera_width / 2 + focal_length * right_proj / forward_proj
+            screen_y = self.camera_height / 2 - focal_length * up_proj / forward_proj
+            
+            # Skip points outside the screen
+            if (screen_x < 0 or screen_x >= self.camera_width or 
+                screen_y < 0 or screen_y >= self.camera_height):
+                continue
+                
+            # Calculate marker size based on distance (closer = bigger)
+            marker_size = max(5, int(20.0 / (1.0 + 0.1 * forward_proj)))
+            
+            # Color based on index (current waypoint is red, future ones fade to yellow)
+            progress = float(i - start_idx) / max(1, self.waypoint_lookahead - 1)
+            color = (255, int(255 * progress), 0)  # Red to yellow gradient
+            
+            # Draw the waypoint marker
+            pygame.draw.circle(self.screen, color, (int(screen_x), int(screen_y)), marker_size)
+            
+            # Draw number for the first few waypoints
+            if i < start_idx + 5:  # Only number the first 5 visible waypoints
+                font = pygame.font.Font(None, 20)
+                text = font.render(str(i - start_idx + 1), True, (255, 255, 255))
+                self.screen.blit(text, (int(screen_x) - 5, int(screen_y) - 8))
+
+    def _render_trust_visualization(self):
+        """Render trust level visualization below the camera view"""
+        if not self.pygame_initialized or not hasattr(self, 'font'):
+            return
+            
+        import pygame
+        
+        # Draw background for trust visualization
+        trust_viz_rect = pygame.Rect(0, self.camera_height, self.camera_width, self.trust_viz_height)
+        pygame.draw.rect(self.screen, (20, 20, 20), trust_viz_rect)
+        pygame.draw.line(self.screen, (50, 50, 50), (0, self.camera_height), (self.camera_width, self.camera_height), 1)
+        
+        # Draw trust level and speed on the same line
+        if hasattr(self, 'trust_interface') and self.trust_interface:
+            trust_text = self.font.render(f"Trust: {self.trust_interface.trust_level:.2f}", True, (255, 255, 255))
+            self.screen.blit(trust_text, (10, self.camera_height + 10))
+            
+            # Indicate if intervention is active
+            if self.trust_interface.intervention_active:
+                intervention_text = self.font.render("INTERVENTION", True, (255, 0, 0))
+                self.screen.blit(intervention_text, (250, self.camera_height + 10))
+        
+        # Display current speed
+        if hasattr(self, 'vehicle') and self.vehicle:
+            velocity = self.vehicle.get_velocity()
+            speed = 3.6 * math.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2)  # m/s to km/h
+            speed_text = self.font.render(f"Speed: {speed:.1f} km/h", True, (255, 255, 255))
+            self.screen.blit(speed_text, (150, self.camera_height + 10))
+            
+        # Draw a separator line
+        pygame.draw.line(
+            self.screen, 
+            (50, 50, 50), 
+            (0, self.camera_height + 30), 
+            (self.camera_width, self.camera_height + 30), 
+            1
+        )
+        
+        # Define colors and labels for each component
+        component_colors = {
+            'path': (0, 200, 0),       # Green
+            'progress': (0, 150, 255),  # Blue
+            'safety': (255, 200, 0),    # Yellow
+            'comfort': (150, 0, 255),   # Purple
+            'trust': (255, 150, 0),     # Orange
+            'intervention': (255, 0, 0)  # Red
+        }
+        
+        component_labels = {
+            'path': 'Path Reward',
+            'progress': 'Speed Reward',
+            'safety': 'Safety Reward',
+            'comfort': 'Comfort Reward',
+            'trust': 'Trust Reward',
+            'intervention': 'Intervention Penalty'
+        }
+        
+        # Calculate dimensions for reward components display
+        components_left = 10
+        components_top = self.camera_height + 40  # Start below the separator
+        component_height = 16  # Increased from 12
+        component_spacing = 10  # Increased from 5
+        label_width = 150
+        value_width = 60  # Increased from 50
+        bar_width = 150
+        max_bar_value = 0.5  # Maximum expected reward value for scaling
+        
+        # Draw title for reward components
+        title_text = self.font.render("REWARD COMPONENTS", True, (200, 200, 200))
+        self.screen.blit(title_text, (components_left, components_top))
+        components_top += 25  # Add space after title
+        
+        # Draw reward components as rows with bars
+        y_pos = components_top
+        for i, (component, value) in enumerate(self.reward_components.items()):
+            # Draw the component label
+            label = self.font.render(component_labels[component], True, (200, 200, 200))
+            self.screen.blit(label, (components_left, y_pos))
+            
+            # Draw the component value
+            value_text = self.font.render(f"{value:.2f}", True, component_colors[component])
+            self.screen.blit(value_text, (components_left + label_width, y_pos))
+            
+            # Draw a bar representing the value
+            bar_left = components_left + label_width + value_width
+            bar_height = component_height
+            
+            # Draw background bar
+            bg_rect = pygame.Rect(bar_left, y_pos + 2, bar_width, bar_height - 4)
+            pygame.draw.rect(self.screen, (40, 40, 40), bg_rect)
+            
+            # Draw value bar
+            if value != 0:
+                # Scale the bar width based on the value
+                scaled_width = min(abs(value) / max_bar_value * bar_width, bar_width)
+                
+                # For negative values, draw from the middle
+                if value < 0:
+                    bar_rect = pygame.Rect(
+                        bar_left + bar_width/2 - scaled_width, 
+                        y_pos + 2, 
+                        scaled_width, 
+                        bar_height - 4
+                    )
+                else:
+                    bar_rect = pygame.Rect(
+                        bar_left + bar_width/2, 
+                        y_pos + 2, 
+                        scaled_width, 
+                        bar_height - 4
+                    )
+                
+                pygame.draw.rect(self.screen, component_colors[component], bar_rect)
+            
+            # Draw center line for reference
+            center_x = bar_left + bar_width/2
+            pygame.draw.line(
+                self.screen,
+                (100, 100, 100),
+                (center_x, y_pos),
+                (center_x, y_pos + bar_height),
+                1
+            )
+            
+            # Move to next component
+            y_pos += component_height + component_spacing
+            
+        # Draw trust history graph if we have data
+        if self.trust_history:
+            # Graph dimensions - adjusted for row-based layout
+            graph_left = 400
+            graph_width = self.camera_width - graph_left - 10
+            graph_top = self.camera_height + 40  # Start below the separator
+            graph_height = self.trust_viz_height - 50
+            
+            # Draw title for trust graph
+            title_text = self.font.render("TRUST HISTORY", True, (200, 200, 200))
+            self.screen.blit(title_text, (graph_left, graph_top))
+            graph_top += 25  # Add space after title
+            graph_height -= 25  # Adjust height to account for title
+            
+            # Draw graph background
+            graph_rect = pygame.Rect(graph_left, graph_top, graph_width, graph_height)
+            pygame.draw.rect(self.screen, (30, 30, 30), graph_rect)  # Darker background for graph
+            pygame.draw.rect(self.screen, (100, 100, 100), graph_rect, 1)  # Border
+            
+            # Draw horizontal lines for trust levels with labels
+            for i in [0, 5, 10]:
+                trust_value = i * 0.1
+                y = graph_top + graph_height - (trust_value * graph_height)
+                pygame.draw.line(
+                    self.screen, 
+                    (70, 70, 70), 
+                    (graph_left, y), 
+                    (graph_left + graph_width, y), 
+                    1
+                )
+                
+                # Add label for trust level
+                level_text = self.font.render(f"{trust_value:.1f}", True, (150, 150, 150))
+                self.screen.blit(level_text, (graph_left - 25, y - 8))
+            
+            # Draw trust history
+            if len(self.trust_history) > 1:
+                points = []
+                for i, trust in enumerate(self.trust_history):
+                    x = graph_left + (i / (self.max_trust_history - 1)) * graph_width
+                    y = graph_top + graph_height - (trust * graph_height)
+                    points.append((x, y))
+                
+                # Draw line connecting trust points
+                if len(points) > 1:
+                    pygame.draw.lines(self.screen, (0, 255, 0), False, points, 2)
+                
+                # Draw current trust level indicator
+                current_x = graph_left + ((len(self.trust_history) - 1) / (self.max_trust_history - 1)) * graph_width
+                current_y = graph_top + graph_height - (self.trust_history[-1] * graph_height)
+                pygame.draw.circle(self.screen, (255, 0, 0), (int(current_x), int(current_y)), 4)
+                
+                # Display current trust value
+                current_trust = self.trust_history[-1]
+                current_text = self.font.render(f"Current: {current_trust:.2f}", True, (255, 255, 255))
+                self.screen.blit(current_text, (graph_left + graph_width - 120, graph_top - 20))
