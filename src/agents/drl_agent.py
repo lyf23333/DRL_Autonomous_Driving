@@ -1,30 +1,9 @@
-from stable_baselines3 import PPO, SAC, DDPG
-from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3 import PPO, SAC, DDPG, DQN
 import numpy as np
 import os
 from typing import Type, Optional
 
-"""
-This file contains the implementation of the DRL agent.
-Note: the drl part is not implemented and tested yet.
-"""
 
-class TrustCallback(BaseCallback):
-    """Custom callback for tracking trust-related metrics during training
-    
-    TODO: Check whether we need this callback or not, as we already have
-    per environment step call back update in the `carla_env`, per policy update trust callback 
-    in the `drl_agent` seems to be redundant"""
-    
-    def __init__(self, trust_interface, verbose=0):
-        super(TrustCallback, self).__init__(verbose)
-        self.trust_interface = trust_interface
-        
-    def _on_step(self):
-        """Update policy based on current trust state"""
-        trust_state = self.trust_interface.get_current_trust_state()
-        # Implement trust-based policy adaptation here
-        return True
 
 class DRLAgent:
     def __init__(self, env, algorithm='ppo'):
@@ -62,6 +41,13 @@ class DRLAgent:
                 verbose=1,
                 tensorboard_log="./tensorboard/"
             )
+        elif self.algorithm == 'dpn':
+            return DQN(
+                "MlpPolicy",
+                self.env,
+                verbose=1,
+                tensorboard_log="./tensorboard/"
+            )
         else:
             raise ValueError(f"Unsupported algorithm: {self.algorithm}")
     
@@ -70,15 +56,9 @@ class DRLAgent:
         # Set scenario in environment
         self.env.set_scenario(scenario, scenario_config)
         
-        # Create callback for trust adaptation
-        callback = TrustCallback(self.env.trust_interface)
-        
         try:
             # Start training
-            self.model.learn(
-                total_timesteps=total_timesteps,
-                # callback=callback
-            )
+            self.model.learn(total_timesteps=total_timesteps)
             
             # Save the trained model
             model_path = os.path.join(
@@ -144,4 +124,8 @@ class DRLAgent:
         elif self.algorithm == 'sac':
             self.model = SAC.load(model_path, env=self.env)
         elif self.algorithm == 'ddpg':
-            self.model = DDPG.load(model_path, env=self.env) 
+            self.model = DDPG.load(model_path, env=self.env)
+        elif self.algorithm == 'dqn':
+            self.model = DQN.load(model_path, env=self.env)
+        else:
+            raise ValueError(f"Unsupported algorithm for loading: {self.algorithm}") 
