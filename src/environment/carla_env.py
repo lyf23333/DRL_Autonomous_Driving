@@ -47,14 +47,22 @@ class CarlaEnv(gym.Env):
         self.pygame_initialized = False
         self.screen = None
         
+        # Trust visualization
+        self.trust_history = []
+        self.max_trust_history = 100  # Number of trust values to keep in history
+        self.trust_viz_height = 60    # Reduced height of trust visualization panel (was 100)
+        
         # Only initialize pygame if render_mode is True
         if self.render_mode:
             try:
                 import pygame
                 pygame.init()
-                self.screen = pygame.display.set_mode((self.camera_width, self.camera_height))
+                # Create a taller screen to accommodate trust visualization
+                self.screen = pygame.display.set_mode((self.camera_width, self.camera_height + self.trust_viz_height))
                 pygame.display.set_caption("CARLA Environment - Vehicle View")
                 self.pygame_initialized = True
+                # Initialize font for text rendering
+                self.font = pygame.font.SysFont('Arial', 16)
             except:
                 print("Warning: Pygame initialization failed. Camera view will not be displayed.")
                 self.pygame_initialized = False
@@ -136,6 +144,10 @@ class CarlaEnv(gym.Env):
         # Update trust-based target speed if trust interface is available
         if self.trust_interface:
             self._update_trust_based_speed()
+            # Update trust history for visualization
+            if len(self.trust_history) >= self.max_trust_history:
+                self.trust_history.pop(0)
+            self.trust_history.append(self.trust_interface.trust_level)
         
         # Calculate reward
         reward = self._calculate_reward()
@@ -182,6 +194,9 @@ class CarlaEnv(gym.Env):
         
         # Reset stuck detection
         self.low_speed_counter = 0
+        
+        # Reset trust history
+        self.trust_history = []
         
         # Destroy existing vehicle if any
         if hasattr(self, 'vehicle') and self.vehicle is not None:
@@ -656,6 +671,10 @@ class CarlaEnv(gym.Env):
                 # Create pygame surface and display it
                 pygame_image = pygame.surfarray.make_surface(array.swapaxes(0, 1))
                 self.screen.blit(pygame_image, (0, 0))
+                
+                # Render trust visualization
+                self._render_trust_visualization()
+                
                 pygame.display.flip()
                 
                 # Process pygame events to keep the window responsive
@@ -667,3 +686,70 @@ class CarlaEnv(gym.Env):
                 print(f"Warning: Human rendering failed: {e}")
                 
         return array  # Return the RGB array for 'rgb_array' mode
+        
+    def _render_trust_visualization(self):
+        """Render trust level visualization below the camera view"""
+        if not self.pygame_initialized or not hasattr(self, 'font'):
+            return
+            
+        import pygame
+        
+        # Create a panel for trust visualization
+        panel_rect = pygame.Rect(0, self.camera_height, self.camera_width, self.trust_viz_height)
+        pygame.draw.rect(self.screen, (50, 50, 50), panel_rect)  # Dark gray background
+        
+        # Draw trust level text
+        trust_level = self.trust_interface.trust_level if self.trust_interface else 0.5
+        trust_text = self.font.render(f"Trust Level: {trust_level:.2f}", True, (255, 255, 255))
+        self.screen.blit(trust_text, (10, self.camera_height + 10))
+        
+        # Draw current speed and target speed
+        if hasattr(self, 'vehicle') and self.vehicle:
+            velocity = self.vehicle.get_velocity()
+            current_speed = 3.6 * np.sqrt(velocity.x**2 + velocity.y**2)  # km/h
+            speed_text = self.font.render(
+                f"Speed: {current_speed:.1f} km/h / Target: {self.target_speed:.1f} km/h", 
+                True, (255, 255, 255)
+            )
+            self.screen.blit(speed_text, (150, self.camera_height + 10))
+        
+        # Draw trust history graph if we have data
+        if self.trust_history:
+            # Graph dimensions - adjusted for smaller panel
+            graph_left = 350
+            graph_width = self.camera_width - graph_left - 10
+            graph_top = self.camera_height + 10
+            graph_height = self.trust_viz_height - 20
+            
+            # Draw graph background
+            graph_rect = pygame.Rect(graph_left, graph_top, graph_width, graph_height)
+            pygame.draw.rect(self.screen, (30, 30, 30), graph_rect)  # Darker background for graph
+            pygame.draw.rect(self.screen, (100, 100, 100), graph_rect, 1)  # Border
+            
+            # Draw fewer horizontal lines for trust levels (just 0.0, 0.5, 1.0)
+            for i in [0, 5, 10]:
+                y = graph_top + graph_height - (i * 0.1 * graph_height)
+                pygame.draw.line(
+                    self.screen, 
+                    (70, 70, 70), 
+                    (graph_left, y), 
+                    (graph_left + graph_width, y), 
+                    1
+                )
+            
+            # Draw trust history
+            if len(self.trust_history) > 1:
+                points = []
+                for i, trust in enumerate(self.trust_history):
+                    x = graph_left + (i / (self.max_trust_history - 1)) * graph_width
+                    y = graph_top + graph_height - (trust * graph_height)
+                    points.append((x, y))
+                
+                # Draw line connecting trust points
+                if len(points) > 1:
+                    pygame.draw.lines(self.screen, (0, 255, 0), False, points, 2)
+                
+                # Draw current trust level indicator
+                current_x = graph_left + ((len(self.trust_history) - 1) / (self.max_trust_history - 1)) * graph_width
+                current_y = graph_top + graph_height - (self.trust_history[-1] * graph_height)
+                pygame.draw.circle(self.screen, (255, 0, 0), (int(current_x), int(current_y)), 3)
