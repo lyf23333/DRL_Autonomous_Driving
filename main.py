@@ -5,9 +5,9 @@ import os
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from src.environment.carla_env import CarlaEnv
-from src.trust.trust_interface import TrustInterface
-from src.agents.drl_agent import DRLAgent
+from environment import CarlaEnv, CarlaEnvDiscrete
+from trust.trust_interface import TrustInterface
+from agents.drl_agent import DRLAgent
 from scenarios import LaneSwitchingScenario, UrbanTrafficScenario, ObstacleAvoidanceScenario
 
 def parse_args():
@@ -16,7 +16,7 @@ def parse_args():
                       choices=['lane_switching', 'urban_traffic', 'obstacle_avoidance'],
                       help='Scenario to run')
     parser.add_argument('--algorithm', type=str, default='ppo',
-                      choices=['ppo', 'sac', 'ddpg'],
+                      choices=['ppo', 'sac', 'ddpg', 'dqn'],
                       help='DRL algorithm to use')
     parser.add_argument('--train', action='store_true',
                       help='Train the agent')
@@ -30,7 +30,10 @@ def main():
     args = parse_args()
     
     # Initialize environment
-    env = CarlaEnv(trust_interface=TrustInterface(), render_mode=args.render)
+    if args.algorithm == 'dqn':
+        env = CarlaEnvDiscrete(trust_interface=TrustInterface(), render_mode=args.render)
+    else:
+        env = CarlaEnv(trust_interface=TrustInterface(), render_mode=args.render)
     
     # Initialize DRL agent
     agent = DRLAgent(
