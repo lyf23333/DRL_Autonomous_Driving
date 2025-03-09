@@ -10,7 +10,11 @@ Note: the drl part is not implemented and tested yet.
 """
 
 class TrustCallback(BaseCallback):
-    """Custom callback for tracking trust-related metrics during training"""
+    """Custom callback for tracking trust-related metrics during training
+    
+    TODO: Check whether we need this callback or not, as we already have
+    per environment step call back update in the `carla_env`, per policy update trust callback 
+    in the `drl_agent` seems to be redundant"""
     
     def __init__(self, trust_interface, verbose=0):
         super(TrustCallback, self).__init__(verbose)

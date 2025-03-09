@@ -1,5 +1,10 @@
 import argparse
 import sys
+import os
+
+# Add the project root to the Python path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from src.environment.carla_env import CarlaEnv
 from src.trust.trust_interface import TrustInterface
 from src.agents.drl_agent import DRLAgent
@@ -17,13 +22,15 @@ def parse_args():
                       help='Train the agent')
     parser.add_argument('--eval', action='store_true',
                       help='Evaluate the agent')
+    parser.add_argument('--render', action='store_true',
+                      help='Rendering mode')
     return parser.parse_args()
 
 def main():
     args = parse_args()
     
     # Initialize environment
-    env = CarlaEnv(trust_interface=TrustInterface())
+    env = CarlaEnv(trust_interface=TrustInterface(), render_mode=args.render)
     
     # Initialize DRL agent
     agent = DRLAgent(

@@ -44,8 +44,8 @@ class CarlaEnv(gym.Env):
         self.pygame_initialized = False
         self.screen = None
         
-        # Only initialize pygame if render_mode is 'human'
-        if self.render_mode == 'human':
+        # Only initialize pygame if render_mode is True
+        if self.render_mode:
             try:
                 import pygame
                 pygame.init()
@@ -124,7 +124,7 @@ class CarlaEnv(gym.Env):
         self.world.tick()
         
         # Render if needed (but don't break training if rendering fails)
-        if self.render_mode is not None:
+        if self.render_mode:
             try:
                 self.render()
             except Exception as e:
@@ -576,7 +576,7 @@ class CarlaEnv(gym.Env):
         collision_sensor.listen(lambda event: self._process_collision(event))
         
         # Only set up camera if rendering is enabled
-        if self.render_mode is not None:
+        if self.render_mode:
             # Camera setup for visualization
             camera_bp = blueprint_library.find('sensor.camera.rgb')
             camera_bp.set_attribute('image_size_x', str(self.camera_width))
@@ -632,7 +632,7 @@ class CarlaEnv(gym.Env):
         array = array[:, :, :3]  # Remove alpha channel
         array = array[:, :, ::-1]  # Convert from BGR to RGB
         
-        if self.render_mode == 'human' and self.pygame_initialized:
+        if self.render_mode and self.pygame_initialized:
             try:
                 import pygame
                 # Create pygame surface and display it
