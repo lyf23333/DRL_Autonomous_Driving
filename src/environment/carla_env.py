@@ -353,10 +353,9 @@ class CarlaEnv(gym.Env):
         if self.step_count >= self.max_episode_steps:
             print(f"Episode truncated: Reached maximum episode length ({self.max_episode_steps} steps)")
             truncated = True
-            
-        # Note: Collision is detected but doesn't end the episode
+
         if self.collision_detected:
-            print("Collision detected but episode continues")
+            terminated = True
             
         return terminated, truncated
     

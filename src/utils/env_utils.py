@@ -130,3 +130,74 @@ def process_collision(event, env):
     print(f"Collision detected with {actor_type}, intensity: {intensity:.2f}")
     
     return collision_detected, collision_impulse
+
+
+def calculate_path_reward(vehicle, waypoints, current_waypoint_idx):
+    """
+    Calculate path reward based on alignment of vehicle velocity with path direction.
+    
+    The reward is higher when the vehicle's velocity vector is aligned with the
+    direction from the current waypoint to the next waypoint.
+    
+    Args:
+        vehicle: CARLA vehicle actor
+        waypoints: List of waypoints
+        current_waypoint_idx: Index of the current waypoint
+        
+    Returns:
+        path_reward: Reward value between -1.0 and 1.0
+    """
+    if vehicle is None or not waypoints or current_waypoint_idx >= len(waypoints) - 1:
+        return 0.0
+    
+    # Get vehicle velocity
+    velocity = vehicle.get_velocity()
+    velocity_vector = np.array([velocity.x, velocity.y])
+    velocity_magnitude = np.linalg.norm(velocity_vector)
+    
+    # If vehicle is not moving, no direction reward
+    if velocity_magnitude < 0.1:  # Threshold to consider vehicle as stationary
+        return 0.0
+    
+    # Normalize velocity vector
+    velocity_direction = velocity_vector / velocity_magnitude
+    
+    # Get current and next waypoint
+    current_waypoint = waypoints[current_waypoint_idx]
+    next_waypoint = waypoints[current_waypoint_idx + 1]
+    
+    # Calculate path direction vector (from current to next waypoint)
+    path_vector = np.array([
+        next_waypoint.x - current_waypoint.x,
+        next_waypoint.y - current_waypoint.y
+    ])
+    path_magnitude = np.linalg.norm(path_vector)
+    
+    # If waypoints are too close, use the direction to the current waypoint
+    if path_magnitude < 0.1:
+        # Get vehicle position
+        vehicle_location = vehicle.get_location()
+        vehicle_pos = np.array([vehicle_location.x, vehicle_location.y])
+        
+        # Calculate direction to current waypoint
+        waypoint_pos = np.array([current_waypoint.x, current_waypoint.y])
+        path_vector = waypoint_pos - vehicle_pos
+        path_magnitude = np.linalg.norm(path_vector)
+        
+        # If still too close, return neutral reward
+        if path_magnitude < 0.1:
+            return 0.0
+    
+    # Normalize path direction vector
+    path_direction = path_vector / path_magnitude
+    
+    # Calculate dot product between velocity direction and path direction
+    # This gives the cosine of the angle between the two vectors
+    # 1.0 = perfectly aligned, 0.0 = perpendicular, -1.0 = opposite direction
+    alignment = np.dot(velocity_direction, path_direction)
+    
+    # Scale the reward to emphasize alignment
+    # This gives a higher reward for alignment and a penalty for going in the wrong direction
+    path_reward = alignment
+    
+    return path_reward
