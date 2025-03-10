@@ -82,6 +82,11 @@ python3 src/main.py --scenario [scenario_name] --algorithm [algorithm_name] --tr
 python3 src/main.py --scenario [scenario_name] --algorithm [algorithm_name] --eval
 ```
 
+E.g.
+```bash
+python3 src/main.py --scenario urban_traffic --algorithm ppo --train --render
+```
+
 ### Manual Scenario Testing
 The project includes a manual testing script that allows you to control the vehicle and test different scenarios:
 
