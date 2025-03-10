@@ -100,3 +100,33 @@ def generate_random_waypoints(vehicle, world, path_length=10):
     print(f"Generated {len(waypoints)} waypoints for path following")
 
     return waypoints, current_waypoint_idx
+
+
+def process_collision(event, env):
+    """
+    Process collision events from CARLA
+    
+    Args:
+        event: The collision event from CARLA
+        env: The environment instance to update
+        
+    Returns:
+        collision_detected: Whether a collision was detected
+        collision_impulse: The impulse vector of the collision
+    """
+    # Set collision flag
+    collision_detected = True
+    
+    # Get collision details
+    collision_actor = event.other_actor
+    impulse = event.normal_impulse
+    intensity = np.sqrt(impulse.x**2 + impulse.y**2 + impulse.z**2)
+    
+    # Create collision impulse array
+    collision_impulse = np.array([impulse.x, impulse.y, impulse.z])
+    
+    # Log collision details
+    actor_type = collision_actor.type_id if hasattr(collision_actor, 'type_id') else "unknown"
+    print(f"Collision detected with {actor_type}, intensity: {intensity:.2f}")
+    
+    return collision_detected, collision_impulse

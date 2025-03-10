@@ -5,7 +5,7 @@ from gymnasium import spaces
 import math
 import pygame
 
-from ..utils.env_utils import generate_control_from_action, spawn_ego_vehicle, generate_random_waypoints
+from ..utils.env_utils import generate_control_from_action, spawn_ego_vehicle, generate_random_waypoints, process_collision
 from ..mdp.observation import get_obs
 from ..mdp.rewards import calculate_reward
 from ..utils.viz_utils import render_trust_visualization, render_waypoints_on_camera
@@ -13,7 +13,7 @@ from ..utils.viz_utils import render_trust_visualization, render_waypoints_on_ca
 class CarlaEnv(gym.Env):
     """Custom Carla environment that follows gymnasium interface"""
     
-    def __init__(self, town='Town01', port=2000, trust_interface=None, render_mode=None):
+    def __init__(self, trust_interface, town='Town01', port=2000, render_mode=None):
         self._initialized = False
         super(CarlaEnv, self).__init__()
         
@@ -27,7 +27,6 @@ class CarlaEnv(gym.Env):
         
         # Scenario management
         self.active_scenario = None
-        self.scenario_config = None
         
         # Trust-related attributes
         self.trust_interface = trust_interface
@@ -128,7 +127,6 @@ class CarlaEnv(gym.Env):
     def set_scenario(self, scenario, config=None):
         """Set the active scenario for the environment"""
         self.active_scenario = scenario
-        self.scenario_config = config
     
     def set_waypoints(self, waypoints):
         """Set the waypoints for path following"""
@@ -155,12 +153,11 @@ class CarlaEnv(gym.Env):
                 print(f"Warning: Rendering failed: {e}")
         
         # Update trust-based target speed if trust interface is available
-        if self.trust_interface:
-            self._update_trust_based_speed()
-            # Update trust history for visualization
-            if len(self.trust_history) >= self.max_trust_history:
-                self.trust_history.pop(0)
-            self.trust_history.append(self.trust_interface.trust_level)
+        self._update_trust_based_speed()
+        # Update trust history for visualization
+        if len(self.trust_history) >= self.max_trust_history:
+            self.trust_history.pop(0)
+        self.trust_history.append(self.trust_interface.trust_level)
         
         # Calculate reward
         reward, self.reward_components = calculate_reward(
@@ -171,7 +168,8 @@ class CarlaEnv(gym.Env):
             self.trust_interface, 
             self.active_scenario, 
             self.world, 
-            self.target_speed)
+            self.target_speed
+        )
         
         # Update reward history for visualization
         self.episode_reward += reward
@@ -282,18 +280,34 @@ class CarlaEnv(gym.Env):
 
     def _update_trust_based_speed(self):
         """Calculate target speed based on trust level"""
-        if self.trust_interface:
-            # Linear interpolation between min and max speed based on trust
-            trust_level = self.trust_interface.trust_level
-            self.target_speed = self.min_target_speed + (self.base_target_speed - self.min_target_speed) * trust_level
+        # Linear interpolation between min and max speed based on trust
+        trust_level = self.trust_interface.trust_level
+        self.target_speed = self.min_target_speed + (self.base_target_speed - self.min_target_speed) * trust_level
 
 
     def _is_done(self):
         """Check if episode is terminated or truncated
         
+        In reinforcement learning environments:
+        - Termination: Natural end of an episode due to failure or impossible recovery.
+          The agent receives no further rewards after termination.
+        - Truncation: Artificial end of an episode due to time limits or successful completion.
+          The episode could have continued, but we choose to end it.
+        
+        Termination conditions (failure states):
+        - Vehicle doesn't exist
+        - Vehicle is off-road
+        - Vehicle is stuck (very low speed for extended time)
+        - Collision detected (if configured to terminate on collision)
+        
+        Truncation conditions (success or time limit):
+        - Scenario is completed successfully
+        - Vehicle reached the end of the path
+        - Maximum number of steps reached
+        
         Returns:
-            terminated: True if the episode should be terminated
-            truncated: True if the episode should be truncated
+            terminated: True if the episode should be terminated (failure state)
+            truncated: True if the episode should be truncated (success or time limit)
         """
         # Initialize return values
         terminated = False
@@ -367,8 +381,7 @@ class CarlaEnv(gym.Env):
             self.active_scenario.cleanup()
 
         # Clean up trust interface
-        if self.trust_interface:
-            self.trust_interface.cleanup()
+        self.trust_interface.cleanup()
             
         # Clean up pygame
         if hasattr(self, 'pygame_initialized') and self.pygame_initialized:
@@ -430,21 +443,9 @@ class CarlaEnv(gym.Env):
     
     def _process_collision(self, event):
         """Process collision events"""
-        # Set collision flag
-        self.collision_detected = True
+        # Use the utility function to process the collision
+        self.collision_detected, self.collision_impulse = process_collision(event, self)
         
-        # Get collision details
-        collision_actor = event.other_actor
-        impulse = event.normal_impulse
-        intensity = np.sqrt(impulse.x**2 + impulse.y**2 + impulse.z**2)
-        
-        # Store collision information
-        self.collision_impulse = np.array([impulse.x, impulse.y, impulse.z])
-        
-        # Log collision details
-        actor_type = collision_actor.type_id if hasattr(collision_actor, 'type_id') else "unknown"
-        print(f"Collision detected with {actor_type}, intensity: {intensity:.2f}")
-
     def _process_camera_data(self, image):
         """Process camera data from sensor"""
         self.camera_image = image
