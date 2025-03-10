@@ -5,9 +5,9 @@ import os
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from environment import CarlaEnv, CarlaEnvDiscrete
-from trust.trust_interface import TrustInterface
-from agents.drl_agent import DRLAgent
+from src.environment import CarlaEnv, CarlaEnvDiscrete
+from src.trust.trust_interface import TrustInterface
+from src.agents.drl_agent import DRLAgent
 from scenarios import LaneSwitchingScenario, UrbanTrafficScenario, ObstacleAvoidanceScenario
 
 def parse_args():

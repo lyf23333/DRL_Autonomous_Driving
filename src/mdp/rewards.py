@@ -1,4 +1,5 @@
 import numpy as np
+from src.utils.env_utils import calculate_path_reward
 
 
 def calculate_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshold, trust_interface, active_scenario, world, target_speed):
@@ -12,11 +13,12 @@ def calculate_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshol
     acceleration = vehicle.get_acceleration()
     current_accel = np.sqrt(acceleration.x**2 + acceleration.y**2)
     
-    # Path following reward
-    path_reward = 0.0
+    # Path following reward - using the new utility function
+    path_reward = calculate_path_reward(vehicle, waypoints, current_waypoint_idx)
+    
+    # Add waypoint reaching bonus
     if waypoints and current_waypoint_idx < len(waypoints):
-        ego_transform = vehicle.get_transform()
-        ego_location = ego_transform.location
+        ego_location = vehicle.get_location()
         next_waypoint = waypoints[current_waypoint_idx]
         
         # Distance to waypoint
@@ -25,12 +27,9 @@ def calculate_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshol
             (ego_location.y - next_waypoint.y) ** 2
         )
         
-        # Reward for being close to waypoint
-        path_reward = 1.0 - min(1.0, distance / 10.0)  # Max distance of 10 meters
-        
         # Additional reward for reaching waypoint
         if distance < waypoint_threshold:
-            path_reward += 2.0
+            path_reward += 1.0
     
     # Progress reward (based on speed)
     # Use trust-based target speed instead of fixed value
@@ -64,7 +63,7 @@ def calculate_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshol
     intervention_penalty = -1.0 if (trust_interface and trust_interface.intervention_active) else 0.0
     
     # Combine rewards with weights
-    path_reward_weighted = 0.8 * path_reward
+    path_reward_weighted = 0.4 * path_reward
     progress_reward_weighted = 0.4 * progress_reward
     safety_reward_weighted = 0.2 * safety_reward
     comfort_reward_weighted = 0.02 * comfort_reward
