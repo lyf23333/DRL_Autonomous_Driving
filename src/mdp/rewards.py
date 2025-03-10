@@ -1,0 +1,92 @@
+import numpy as np
+
+
+def calculate_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshold, trust_interface, active_scenario, world, target_speed):
+    """Calculate reward based on current state"""
+    if vehicle is None:
+        return 0.0
+        
+    # Get current vehicle state
+    velocity = vehicle.get_velocity()
+    current_speed = 3.6 * np.sqrt(velocity.x**2 + velocity.y**2)  # km/h
+    acceleration = vehicle.get_acceleration()
+    current_accel = np.sqrt(acceleration.x**2 + acceleration.y**2)
+    
+    # Path following reward
+    path_reward = 0.0
+    if waypoints and current_waypoint_idx < len(waypoints):
+        ego_transform = vehicle.get_transform()
+        ego_location = ego_transform.location
+        next_waypoint = waypoints[current_waypoint_idx]
+        
+        # Distance to waypoint
+        distance = np.sqrt(
+            (ego_location.x - next_waypoint.x) ** 2 +
+            (ego_location.y - next_waypoint.y) ** 2
+        )
+        
+        # Reward for being close to waypoint
+        path_reward = 1.0 - min(1.0, distance / 10.0)  # Max distance of 10 meters
+        
+        # Additional reward for reaching waypoint
+        if distance < waypoint_threshold:
+            path_reward += 2.0
+    
+    # Progress reward (based on speed)
+    # Use trust-based target speed instead of fixed value
+    speed_diff = abs(current_speed - target_speed)
+    progress_reward = 1.0 - min(1.0, speed_diff / max(1.0, target_speed))  # Avoid division by zero
+    
+    # Safety reward components
+    safety_reward = 0.0
+    if active_scenario:
+        danger_threshold = 5.0  # meters
+        min_distance = float('inf')
+        ego_location = vehicle.get_location()
+        
+        vehicles = world.get_actors().filter('vehicle.*')
+        for vehicle in vehicles:
+            if vehicle.id != vehicle.id:
+                distance = ego_location.distance(vehicle.get_location())
+                min_distance = min(min_distance, distance)
+        
+        if min_distance < danger_threshold:
+            safety_reward = -1.0 * (1.0 - min_distance / danger_threshold)
+    
+    # Comfort reward (penalize high acceleration and jerk)
+    max_comfortable_accel = 3.0  # m/s²
+    comfort_reward = -min(1.0, current_accel / max_comfortable_accel)
+    
+    # Trust-based reward
+    trust_reward = trust_interface.trust_level if trust_interface else 0.5
+    
+    # Intervention penalty
+    intervention_penalty = -1.0 if (trust_interface and trust_interface.intervention_active) else 0.0
+    
+    # Combine rewards with weights
+    path_reward_weighted = 0.8 * path_reward
+    progress_reward_weighted = 0.4 * progress_reward
+    safety_reward_weighted = 0.2 * safety_reward
+    comfort_reward_weighted = 0.02 * comfort_reward
+    trust_reward_weighted = 0.1 * trust_reward
+    
+    # Store reward components for visualization
+    reward_components = {
+        'path': path_reward_weighted,
+        'progress': progress_reward_weighted,
+        'safety': safety_reward_weighted,
+        'comfort': comfort_reward_weighted,
+        'trust': trust_reward_weighted,
+        'intervention': intervention_penalty
+    }
+    
+    total_reward = (
+        path_reward_weighted +
+        progress_reward_weighted +
+        safety_reward_weighted +
+        comfort_reward_weighted +
+        trust_reward_weighted +
+        intervention_penalty
+    )
+    
+    return total_reward, reward_components
