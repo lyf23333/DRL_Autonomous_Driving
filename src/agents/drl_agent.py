@@ -66,11 +66,21 @@ class DRLAgent:
                 f"{self.algorithm}_{scenario.__class__.__name__}.zip"
             )
             self.model.save(model_path)
+            print(f"Model successfully saved to {model_path}")
+            
+        except Exception as e:
+            import traceback
+            print(f"Exception during training: {type(e).__name__}: {e}")
+            print("Traceback:")
+            traceback.print_exc()
+            print("Training terminated early due to error.")
             
         finally:
             # Cleanup scenario
+            print("Cleaning up scenario resources...")
             if hasattr(self.env, 'active_scenario'):
                 self.env.active_scenario.cleanup()
+            print("Cleanup complete.")
     
     def evaluate(self, scenario_class: Type, n_episodes=10, scenario_config=None):
         """Evaluate the agent on a specific scenario"""
@@ -112,10 +122,19 @@ class DRLAgent:
             print(f"Average Trust Level: {np.mean(trust_levels):.2f}")
             print(f"Scenario Completion Rate: {completion_rate / n_episodes * 100:.1f}%")
             
+        except Exception as e:
+            import traceback
+            print(f"Exception during evaluation: {type(e).__name__}: {e}")
+            print("Traceback:")
+            traceback.print_exc()
+            print("Evaluation terminated early due to error.")
+            
         finally:
             # Cleanup scenario
+            print("Cleaning up scenario resources...")
             if hasattr(self.env, 'active_scenario'):
                 self.env.active_scenario.cleanup()
+            print("Cleanup complete.")
     
     def load(self, model_path):
         """Load a trained model"""
