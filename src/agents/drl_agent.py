@@ -11,7 +11,7 @@ class DRLAgent:
         self.algorithm = algorithm.lower()
         
         # Set up model paths
-        self.models_dir = "models"
+        self.models_dir = os.path.join("models", self.algorithm)
         os.makedirs(self.models_dir, exist_ok=True)
         
         # Initialize the appropriate algorithm
@@ -29,21 +29,21 @@ class DRLAgent:
             )
         elif self.algorithm == 'sac':
             return SAC(
-                "MlpPolicy",
+                "MultiInputPolicy",
                 self.env,
                 verbose=1,
                 tensorboard_log="./tensorboard/"
             )
         elif self.algorithm == 'ddpg':
             return DDPG(
-                "MlpPolicy",
+                "MultiInputPolicy",
                 self.env,
                 verbose=1,
                 tensorboard_log="./tensorboard/"
             )
-        elif self.algorithm == 'dpn':
+        elif self.algorithm == 'dqn':
             return DQN(
-                "MlpPolicy",
+                "MultiInputPolicy",
                 self.env,
                 verbose=1,
                 tensorboard_log="./tensorboard/"
