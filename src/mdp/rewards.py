@@ -52,10 +52,6 @@ def calculate_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshol
         if min_distance < danger_threshold:
             safety_reward = -1.0 * (1.0 - min_distance / danger_threshold)
     
-    # Comfort reward (penalize high acceleration and jerk)
-    max_comfortable_accel = 3.0  # m/s²
-    comfort_reward = -min(1.0, current_accel / max_comfortable_accel)
-    
     # Trust-based reward
     trust_reward = trust_interface.trust_level if trust_interface else 0.5
     
@@ -66,7 +62,6 @@ def calculate_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshol
     path_reward_weighted = 0.4 * path_reward
     progress_reward_weighted = 0.4 * progress_reward
     safety_reward_weighted = 0.2 * safety_reward
-    comfort_reward_weighted = 0.02 * comfort_reward
     trust_reward_weighted = 0.1 * trust_reward
     
     # Store reward components for visualization
@@ -74,7 +69,6 @@ def calculate_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshol
         'path': path_reward_weighted,
         'progress': progress_reward_weighted,
         'safety': safety_reward_weighted,
-        'comfort': comfort_reward_weighted,
         'trust': trust_reward_weighted,
         'intervention': intervention_penalty
     }
@@ -83,7 +77,6 @@ def calculate_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshol
         path_reward_weighted +
         progress_reward_weighted +
         safety_reward_weighted +
-        comfort_reward_weighted +
         trust_reward_weighted +
         intervention_penalty
     )
