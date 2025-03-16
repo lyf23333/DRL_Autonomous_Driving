@@ -187,8 +187,10 @@ class UrbanTrafficScenario:
             if vehicle.is_alive:
                 vehicle.destroy()
         self.vehicles.clear()
+        self.vehicles = []
         
         for walker in self.walkers:
             if walker.is_alive:
                 walker.destroy()
         self.walkers.clear() 
+        self.walkers = []
