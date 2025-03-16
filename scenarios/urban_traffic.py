@@ -162,6 +162,8 @@ class UrbanTrafficScenario:
                     - Relative velocity x (in ego vehicle's coordinate frame)
                     - Relative velocity y (in ego vehicle's coordinate frame)
                     - Distance to the vehicle
+                
+        Note: Vehicles more than 20 meters away will have all their observation values set to 0.
         """
         # Initialize empty observation with zeros
         num_nearest_vehicles = 3
@@ -187,7 +189,10 @@ class UrbanTrafficScenario:
                 
             # Calculate distance
             distance = ego_location.distance(vehicle.get_location())
-            vehicle_distances.append((distance, i))
+            
+            # Only consider vehicles within 20 meters
+            if distance <= 20.0:
+                vehicle_distances.append((distance, i))
         
         # Sort by distance and take the three nearest
         vehicle_distances.sort()
