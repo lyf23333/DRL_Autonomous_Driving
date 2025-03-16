@@ -143,10 +143,17 @@ class AutomaticController:
         velocity = self.env.vehicle.get_velocity()
         speed = 3.6 * np.sqrt(velocity.x**2 + velocity.y**2)  # Convert to km/h
         
-        # PID parameters for speed control
-        Kp_speed = 0.5
-        Ki_speed = 0.1
-        Kd_speed = 0.1
+        # Get trust level and behavior adjustments if available
+        trust_level = self.env.trust_interface.trust_level
+        
+        # Adjust PID parameters based on trust level
+        # Lower trust = more conservative control (lower gains)
+        trust_factor = 0.5 + 0.5 * trust_level  # Range from 0.5 to 1.0
+        
+        # PID parameters for speed control - adjusted by trust
+        Kp_speed = 0.5 * trust_factor
+        Ki_speed = 0.1 * trust_factor
+        Kd_speed = 0.1 * trust_factor
         
         # Calculate error
         error = self.target_speed - speed
@@ -164,11 +171,15 @@ class AutomaticController:
         
         # Convert to throttle/brake
         if longitudinal > 0:
-            throttle = np.clip(longitudinal, 0.0, 0.75)  # Limit maximum throttle
+            # Adjust throttle based on trust - lower trust means gentler acceleration
+            max_throttle = 0.5 + 0.5 * trust_level  # Range from 0.5 to 1.0
+            throttle = np.clip(longitudinal, 0.0, max_throttle)
             brake = 0.0
         else:
             throttle = 0.0
-            brake = np.clip(-longitudinal, 0.0, 1.0)
+            # Adjust braking based on trust - lower trust means stronger braking
+            brake_factor = 1.0 + (1.0 - trust_level) * 0.5  # Range from 1.0 to 1.5
+            brake = np.clip(-longitudinal * brake_factor, 0.0, 1.0)
             
         # Waypoint following for steering
         try:
@@ -197,21 +208,34 @@ class AutomaticController:
             if cross < 0:
                 angle = -angle
                 
-            # PID parameters for steering
-            Kp_steer = 0.8
-            Kd_steer = 0.1
+            # PID parameters for steering - adjusted by trust
+            Kp_steer = 0.8 * trust_factor
+            Kd_steer = 0.1 * trust_factor
             
             # Calculate steering control
             steering = Kp_steer * angle + Kd_steer * (angle / dt if dt > 0 else 0)
-            steering = np.clip(steering, -1.0, 1.0)
+            
+            # Adjust steering magnitude based on trust
+            # Lower trust = more conservative steering (reduced magnitude)
+            max_steering = 0.7 + 0.3 * trust_level  # Range from 0.7 to 1.0
+            steering = np.clip(steering, -max_steering, max_steering)
             
         except:
             # Fallback to simple steering if waypoint calculation fails
             steering = 0.0
         
+        # Add hesitation effect when trust is low
+        # Occasionally reduce action magnitude to simulate hesitation
+        if trust_level < 0.5 and np.random.random() < (1.0 - trust_level) * 0.3:
+            hesitation_factor = 0.7 + 0.3 * trust_level  # Range from 0.7 to 1.0
+            throttle *= hesitation_factor
+            steering *= hesitation_factor
+        
         # Add smoothing to prevent sudden changes
         if hasattr(self, 'prev_steering'):
-            max_steering_change = 0.1
+            # Adjust max steering change based on trust
+            # Lower trust = more gradual steering changes
+            max_steering_change = 0.05 + 0.15 * trust_level  # Range from 0.05 to 0.2
             steering = np.clip(
                 steering,
                 self.prev_steering - max_steering_change,
@@ -223,6 +247,7 @@ class AutomaticController:
         if self.steps % 20 == 0:  # Print every 20 steps
             print(f"Speed: {speed:.1f} km/h, Target: {self.target_speed:.1f} km/h")
             print(f"Throttle: {throttle:.2f}, Brake: {brake:.2f}, Steering: {steering:.2f}")
+            print(f"Trust Level: {trust_level:.2f}, Trust Factor: {trust_factor:.2f}")
         
         return np.array([steering, throttle if throttle > 0 else -brake])
     
@@ -256,6 +281,41 @@ class AutomaticController:
         for i, text in enumerate(texts):
             text_surface = font.render(text, True, (0, 0, 0))
             self.info_surface.blit(text_surface, (10, 10 + i * 40))
+        
+        # Display behavior adjustments if available
+        if 'behavior_adjustment' in info:
+            behavior = info['behavior_adjustment']
+            behavior_texts = [
+                f"Behavior Factor: {behavior['behavior_factor']:.2f}",
+                f"Steering Stability: {behavior['stability_factor']:.2f}",
+                f"Smoothness: {behavior['smoothness_factor']:.2f}",
+                f"Hesitation: {1.0 - behavior['hesitation_factor']:.2f}"
+            ]
+            
+            for i, text in enumerate(behavior_texts):
+                text_surface = font.render(text, True, (0, 0, 150))
+                self.info_surface.blit(text_surface, (400, 10 + i * 40))
+                
+        # Display driving metrics if available
+        if 'driving_metrics' in info:
+            metrics = info['driving_metrics']
+            y_offset = 300
+            
+            # Draw title
+            title = font.render("Driving Metrics:", True, (0, 0, 0))
+            self.info_surface.blit(title, (10, y_offset))
+            
+            # Draw metrics
+            metric_texts = [
+                f"Steering Stability: {metrics['steering_stability']:.2f}",
+                f"Accel Smoothness: {metrics['acceleration_smoothness']:.2f}",
+                f"Braking Smoothness: {metrics['braking_smoothness']:.2f}",
+                f"Hesitation Level: {metrics['hesitation_level']:.2f}"
+            ]
+            
+            for i, text in enumerate(metric_texts):
+                text_surface = font.render(text, True, (100, 0, 0))
+                self.info_surface.blit(text_surface, (10, y_offset + 40 + i * 30))
         
         # Update main display
         if self.camera_surface is not None:

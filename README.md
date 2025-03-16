@@ -214,7 +214,61 @@ The system employs a multi-faceted approach to collect and adapt to trust-relate
    - The adaptation process involves smoothing out the driving style to gradually rebuild trust. This includes reducing sudden accelerations or decelerations and maintaining a safe distance from other vehicles.
    - The reinforcement learning model is updated with these trust indicators, allowing the vehicle to learn and adjust its behavior in real-time to better match the user's trust level.
 
-The combination of these mechanisms allows the system to adaptively learn and respond to the user's trust level, enhancing the overall safety and comfort of the autonomous driving experience.
+## Trust-Based Behavior Adaptation
+
+The system implements a comprehensive trust-based behavior adaptation mechanism that modifies the vehicle's driving style based on the current trust level and driving metrics. This adaptation affects multiple aspects of driving behavior:
+
+### 1. Speed Adjustment
+
+- **Target Speed**: The vehicle's target speed is directly proportional to the trust level. Higher trust leads to higher target speeds, while lower trust results in more conservative speeds.
+- **Acceleration Profile**: At low trust levels, the vehicle accelerates more gently to avoid sudden movements that might decrease trust further.
+- **Braking Intensity**: When trust is low, the vehicle applies stronger braking earlier to maintain a larger safety margin.
+
+### 2. Steering Behavior
+
+- **Steering Magnitude**: Lower trust levels result in more conservative steering inputs, reducing the maximum steering angle to avoid sharp turns.
+- **Steering Stability**: The system monitors steering stability and adjusts control parameters to maintain smoother trajectories when stability is low.
+- **Turn Anticipation**: At low trust levels, the vehicle begins turns earlier and executes them more gradually.
+
+### 3. Hesitation Modeling
+
+- **Decision Points**: The system detects decision points such as intersections and lane merges, where hesitation is more likely to occur.
+- **Hesitation Effects**: When trust is low, the vehicle occasionally exhibits hesitation behaviors, such as temporarily reducing action magnitudes or introducing small delays.
+- **Confidence Building**: As trust increases, hesitation behaviors are gradually eliminated, resulting in more decisive driving.
+
+### 4. Smoothness and Comfort
+
+- **Action Smoothing**: Lower trust levels lead to more gradual changes in control inputs, avoiding abrupt transitions.
+- **Jerk Minimization**: The system reduces acceleration and deceleration rates to minimize jerk (rate of change of acceleration) when trust is low.
+- **Predictable Behavior**: At low trust levels, the vehicle maintains more consistent and predictable behavior patterns.
+
+### Implementation Details
+
+The trust-based behavior adaptation is implemented through several key components:
+
+1. **Behavior Adjustment Factors**: The system calculates and maintains behavior adjustment factors based on trust level and driving metrics:
+   - `trust_level`: The current trust level (0.0 to 1.0)
+   - `behavior_factor`: Combined behavior factor incorporating stability, smoothness, and hesitation
+   - `stability_factor`: Measure of steering stability
+   - `smoothness_factor`: Measure of acceleration and braking smoothness
+   - `hesitation_factor`: Measure of confidence vs. hesitation
+
+2. **Action Adjustment**: The `_adjust_action_based_on_trust` method modifies the agent's actions based on these factors:
+   - Steering adjustments based on stability
+   - Throttle/brake adjustments based on trust and smoothness
+   - Random hesitation effects when trust is low
+
+3. **PID Control Parameters**: For the automatic controller, PID parameters are dynamically adjusted based on trust:
+   - Lower gains at low trust levels for more conservative control
+   - Smaller maximum steering changes for smoother transitions
+   - Adjusted maximum throttle and braking forces
+
+4. **Visualization**: The system provides visual feedback on trust-based behavior adjustments through the user interface, displaying:
+   - Current trust level and behavior factors
+   - Driving metrics and their impact on behavior
+   - Intervention probability and history
+
+This comprehensive trust-based behavior adaptation system creates a more natural and human-like driving experience that responds appropriately to the user's trust level, helping to build and maintain trust over time.
 
 ## Evaluation Scenarios
 1. Lane Switching
