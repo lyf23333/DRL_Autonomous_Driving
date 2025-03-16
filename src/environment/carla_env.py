@@ -33,6 +33,7 @@ class CarlaEnv(gym.Env):
         self.last_step_time = None
         self.intervention_active = False
         self.intervention_type = None  # Track the type of intervention
+        self.current_intervention_prob = 0.0  # Probability of intervention in current step
         
         # Decision point detection
         self.is_near_decision_point = False
@@ -191,7 +192,7 @@ class CarlaEnv(gym.Env):
         # Set decision point status in trust interface
         self.trust_interface.set_near_decision_point(self.is_near_decision_point)
         
-        # Detect manual interventions based on control changes
+        # Detect manual interventions based on control changes and update trust
         self._detect_interventions_and_update_trust(control)
         
         # Update trust-based behavior parameters
@@ -242,7 +243,9 @@ class CarlaEnv(gym.Env):
             'step_count': self.step_count,
             'driving_metrics': self.trust_interface.driving_metrics if self.trust_interface else {},
             'is_near_decision_point': self.is_near_decision_point,
-            'behavior_adjustment': self.behavior_adjustment
+            'behavior_adjustment': self.behavior_adjustment,
+            'intervention_probability': self.current_intervention_prob,
+            'intervention_active': self.intervention_active
         }
         
         return obs, reward, terminated, truncated, info
@@ -297,6 +300,7 @@ class CarlaEnv(gym.Env):
         self.intervention_type = None
         self.is_near_decision_point = False
         self.prev_control = None
+        self.current_intervention_prob = 0.0
         
         # Reset behavior adjustment
         self.behavior_adjustment = {
@@ -386,29 +390,67 @@ class CarlaEnv(gym.Env):
         """Adjust the agent's action based on trust level and driving behavior metrics
         
         This method modifies the agent's actions to reflect how a human driver's behavior
-        would change based on their trust level and driving style.
+        would change based on their trust level and driving style. Adjustments are applied
+        probabilistically to simulate realistic human intervention patterns.
         
         Args:
             action: Original action from the agent [steering, throttle/brake]
             
         Returns:
-            adjusted_action: Modified action based on trust and behavior
+            adjusted_action: Modified action based on trust and behavior, or original action if no adjustment
         """
         # Make a copy of the original action
         adjusted_action = np.array(action, dtype=np.float32)
         
+        # Calculate probability of intervention based on trust level and driving metrics
+        trust_level = self.behavior_adjustment['trust_level']
+        
+        # Base intervention probability - higher when trust is lower
+        base_intervention_prob = (1.0 - trust_level) * 0.2  # Range: 0.0 to 0.2
+        
+        # Adjust based on driving metrics
+        if hasattr(self.trust_interface, 'driving_metrics'):
+            stability_factor = self.behavior_adjustment['stability_factor']
+            smoothness_factor = self.behavior_adjustment['smoothness_factor']
+            hesitation_factor = self.behavior_adjustment['hesitation_factor']
+            
+            # Increase probability when driving metrics are poor
+            metrics_factor = (3.0 - stability_factor - smoothness_factor - hesitation_factor) / 3.0
+            metrics_intervention_prob = metrics_factor * 0.15  # Range: 0.0 to 0.15
+            
+            # Higher probability near decision points
+            decision_point_factor = 0.1 if self.is_near_decision_point else 0.0
+            
+            # Combine probabilities
+            intervention_prob = base_intervention_prob + metrics_intervention_prob + decision_point_factor
+            
+            # Cap at reasonable maximum
+            intervention_prob = min(0.5, intervention_prob)  # Max 50% chance per step
+        else:
+            # Simplified probability if metrics not available
+            intervention_prob = base_intervention_prob
+        
+        # Store the current intervention probability for debugging/visualization
+        self.current_intervention_prob = intervention_prob
+        
+        # Decide whether to intervene this step
+        if np.random.random() > intervention_prob:
+            # No intervention this step - return original action unchanged
+            return adjusted_action
+            
+        # If we reach here, we're applying an intervention
+        
         # Extract behavior factors
+        stability_factor = self.behavior_adjustment['stability_factor']
+        smoothness_factor = self.behavior_adjustment['smoothness_factor']
         
         # 1. Adjust steering based on stability
         # Low stability -> more conservative steering (reduced magnitude)
-        stability_factor = self.behavior_adjustment['stability_factor']
         steering_adjustment = 0.5 + 0.5 * stability_factor  # Range: 0.5 to 1.0
         adjusted_action[0] *= steering_adjustment
         
         # 2. Adjust throttle/brake based on trust and smoothness
         # Low trust or smoothness -> more gentle acceleration, stronger braking
-        trust_level = self.behavior_adjustment['trust_level']
-        smoothness_factor = self.behavior_adjustment['smoothness_factor']
         if adjusted_action[1] > 0:  # Throttle
             # Low trust or smoothness -> reduce throttle
             throttle_adjustment = 0.3 + 0.7 * (trust_level * smoothness_factor)  # Range: 0.3 to 1.0
@@ -425,11 +467,33 @@ class CarlaEnv(gym.Env):
             hesitation_reduction = 1.0 - (hesitation_factor * 0.5)  # Range: 0.85 to 0.5
             adjusted_action *= hesitation_reduction
         
+        # Record that an intervention occurred this step
+        if hasattr(self, 'trust_interface') and self.trust_interface:
+            # Only count as intervention if the change is significant
+            if np.abs(adjusted_action - action).max() > 0.1:
+                self.intervention_active = True
+                
+                # Determine intervention type based on which component changed more
+                if abs(adjusted_action[0] - action[0]) > abs(adjusted_action[1] - action[1]):
+                    self.intervention_type = 'steer'
+                else:
+                    self.intervention_type = 'brake' if action[1] < 0 else 'throttle'
+        
         return adjusted_action
     
     def _detect_interventions_and_update_trust(self, current_control):
-        """Detect manual interventions based on control changes"""
+        """Detect manual interventions based on control changes and update trust accordingly"""
         if self.prev_control is None:
+            return
+            
+        # Check if an intervention was triggered by the action adjustment
+        if self.intervention_active:
+            # An intervention was already recorded by _adjust_action_based_on_trust
+            self.trust_interface.update_trust(intervention=True, intervention_type=self.intervention_type, dt=0.0)
+            
+            # Reset intervention flag after processing
+            self.intervention_active = False
+            self.intervention_type = None
             return
             
         # Check for significant steering correction
@@ -456,10 +520,6 @@ class CarlaEnv(gym.Env):
             
             # Update trust with no intervention
             self.trust_interface.update_trust(intervention=False, dt=dt)
-        else:
-            # Reset intervention flag after processing
-            self.intervention_active = False
-            self.intervention_type = None
 
     def _is_done(self):
         """Check if episode is terminated or truncated
