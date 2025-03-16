@@ -75,18 +75,6 @@ pip3 install -r requirements.txt
 
 ## Running Scenarios
 
-### Training/Evaluation
-Note: WIP
-```bash
-python3 src/main.py --scenario [scenario_name] --algorithm [algorithm_name] --train
-python3 src/main.py --scenario [scenario_name] --algorithm [algorithm_name] --eval
-```
-
-E.g.
-```bash
-python3 src/main.py --scenario urban_traffic --algorithm ppo --train --render
-```
-
 ### Integrated CARLA Server Management
 
 The project now includes an integrated CARLA server manager that can automatically start and stop the CARLA simulator as part of your training or evaluation pipeline. This eliminates the need to manually start CARLA in a separate terminal.
@@ -97,7 +85,7 @@ To use this feature, add the `--start-carla` flag to your command:
 ```bash
 python3 main.py --scenario urban_traffic --algorithm ppo --train --render --start-carla
 ```
-**Training**:
+**Evaluation**:
 ```bash
 python3 main.py --scenario urban_traffic --algorithm ppo --eval --render --start-carla
 ```
