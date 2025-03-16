@@ -19,6 +19,7 @@ from scenarios.lane_switching import LaneSwitchingScenario
 from scenarios.urban_traffic import UrbanTrafficScenario
 from scenarios.obstacle_avoidance import ObstacleAvoidanceScenario
 from scenarios.emergency_braking import EmergencyBrakingScenario
+from src.utils.carla_server import CarlaServerManager
 
 class AutomaticController:
     def __init__(self, env: CarlaEnv, scenario_class):
@@ -310,7 +311,39 @@ def main():
     parser.add_argument('--scenario', type=str, default='obstacle_avoidance',
                       choices=['lane_switching', 'urban_traffic', 'obstacle_avoidance', 'emergency_braking'],
                       help='Scenario to test')
+    
+    # CARLA server options
+    parser.add_argument('--start-carla', action='store_true',
+                      help='Start CARLA server automatically')
+    parser.add_argument('--carla-path', type=str, default=None,
+                      help='Path to CARLA installation (if not set, will try to auto-detect)')
+    parser.add_argument('--port', type=int, default=2000,
+                      help='Port to run CARLA server on')
+    parser.add_argument('--town', type=str, default='Town01',
+                      help='CARLA town/map to use')
+    parser.add_argument('--quality', type=str, default='Epic', choices=['Low', 'Epic'],
+                      help='Graphics quality for CARLA')
+    parser.add_argument('--offscreen', action='store_true',
+                      help='Run CARLA in offscreen mode (no rendering)')
+    
     args = parser.parse_args()
+    
+    # Start CARLA server if requested
+    carla_server = None
+    if args.start_carla:
+        print("Starting CARLA server...")
+        carla_server = CarlaServerManager()
+        success = carla_server.start_server(
+            port=args.port,
+            town=args.town,
+            quality=args.quality,
+            offscreen=args.offscreen,
+            carla_path=args.carla_path
+        )
+        
+        if not success:
+            print("Failed to start CARLA server. Exiting.")
+            sys.exit(1)
     
     # Scenario mapping
     scenario_map = {
@@ -321,7 +354,11 @@ def main():
     }
     
     # Initialize components
-    env = CarlaEnv(trust_interface = TrustInterface())
+    env = CarlaEnv(
+        trust_interface=TrustInterface(),
+        town=args.town,
+        port=args.port
+    )
     
     # Create and run manual controller
     controller = AutomaticController(
@@ -340,7 +377,12 @@ def main():
     print("ESC: Quit")
     print("----------------------------\n")
     
-    controller.run()
+    try:
+        controller.run()
+    finally:
+        # Stop CARLA server if we started it
+        if carla_server:
+            carla_server.stop_server()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main() 
