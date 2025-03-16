@@ -104,7 +104,7 @@ class CarlaEnv(gym.Env):
             'scenario_obs': spaces.Box(
                 low=-np.inf,
                 high=np.inf,
-                shape=(20,),  # Adjust size based on scenario needs
+                shape=(15,),  # Updated for 3 vehicles with 5 values each
                 dtype=np.float32
             )
         })

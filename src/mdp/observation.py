@@ -90,11 +90,11 @@ def get_obs(vehicle, waypoints, current_waypoint_idx, waypoint_threshold, trust_
     if active_scenario:
         scenario_obs = active_scenario.get_scenario_specific_obs()
     else:
-        scenario_obs = np.zeros(20)
+        scenario_obs = np.zeros(15)
     
     scenario_obs = np.pad(
         scenario_obs,
-        (0, 20 - len(scenario_obs)),
+        (0, 15 - len(scenario_obs)),
         'constant',
         constant_values=0
     )
