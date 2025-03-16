@@ -40,7 +40,8 @@
                 "--algorithm=ppo",
                 "--train",
                 "--render",
-                "--start-carla"
+                "--start-carla",
+                // "--quality=Low"
             ],
             "console": "integratedTerminal",
             "justMyCode": true

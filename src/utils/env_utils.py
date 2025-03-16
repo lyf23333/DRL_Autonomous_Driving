@@ -216,3 +216,48 @@ def calculate_path_reward(vehicle, waypoints, current_waypoint_idx, waypoint_thr
             path_reward += 1.0
     
     return path_reward
+
+def check_decision_points(vehicle, world, decision_point_distance=20.0):
+    """Check if the vehicle is near a decision point (intersection, lane merge, etc.)"""
+    is_near_decision_point = False
+        
+    # Get current vehicle location
+    vehicle_location = vehicle.get_location()
+    
+    # Get current waypoint
+    current_waypoint = world.get_map().get_waypoint(vehicle_location)
+    if current_waypoint is None:
+        is_near_decision_point = False
+        return
+        
+    # Check for intersections
+    is_near_intersection = False
+    
+    # Look ahead for intersections
+    next_waypoints = current_waypoint.next(decision_point_distance)
+    for waypoint in next_waypoints:
+        if waypoint.is_intersection:
+            is_near_intersection = True
+            break
+            
+    # Check for lane merges or lane changes
+    is_near_lane_change = False
+    
+    # Check if there are multiple lane options ahead
+    if current_waypoint.get_right_lane() or current_waypoint.get_left_lane():
+        # Look ahead for lane changes
+        for distance in [5.0, 10.0, 15.0]:
+            next_waypoints = current_waypoint.next(distance)
+            for waypoint in next_waypoints:
+                if (waypoint.lane_id != current_waypoint.lane_id or 
+                    waypoint.lane_change == carla.LaneChange.Right or 
+                    waypoint.lane_change == carla.LaneChange.Left or
+                    waypoint.lane_change == carla.LaneChange.Both):
+                    is_near_lane_change = True
+                    break
+            if is_near_lane_change:
+                break
+    
+    # Update decision point status
+    is_near_decision_point = is_near_intersection or is_near_lane_change
+    return is_near_decision_point

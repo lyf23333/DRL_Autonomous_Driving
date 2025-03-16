@@ -221,6 +221,20 @@ class AutomaticController:
             text_surface = font.render(text, True, (0, 0, 0))
             self.info_surface.blit(text_surface, (10, 10 + i * 40))
         
+        # Display behavior adjustments if available
+        if 'behavior_adjustment' in info:
+            behavior = info['behavior_adjustment']
+            behavior_texts = [
+                f"Behavior Factor: {behavior['behavior_factor']:.2f}",
+                f"Steering Stability: {behavior['stability_factor']:.2f}",
+                f"Smoothness: {behavior['smoothness_factor']:.2f}",
+                f"Hesitation: {1.0 - behavior['hesitation_factor']:.2f}"
+            ]
+            
+            for i, text in enumerate(behavior_texts):
+                text_surface = font.render(text, True, (0, 0, 150))
+                self.info_surface.blit(text_surface, (400, 10 + i * 40))
+        
         # Update main display
         if self.camera_surface is not None:
             self.screen.blit(self.camera_surface, (0, 0))
