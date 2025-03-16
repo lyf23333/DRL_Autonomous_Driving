@@ -11,7 +11,8 @@ def get_obs(vehicle, waypoints, current_waypoint_idx, waypoint_threshold, trust_
         return {
             'vehicle_state': default_vehicle_state,
             'recent_intervention': 0,
-            'scenario_obs': np.zeros(20)
+            'scenario_obs': np.zeros(15),
+            'radar_obs': np.zeros((1, 360))  # Default radar observation (1 layer, 360 angles)
         }
     
     # Get vehicle state
@@ -98,6 +99,9 @@ def get_obs(vehicle, waypoints, current_waypoint_idx, waypoint_threshold, trust_
         'constant',
         constant_values=0
     )
+    
+    # Note: Radar observation is added directly in the CarlaEnv class
+    # since it's handled by the environment's sensor system
     
     return {
         'vehicle_state': vehicle_state,
