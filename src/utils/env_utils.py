@@ -132,7 +132,7 @@ def process_collision(event, env):
     return collision_detected, collision_impulse
 
 
-def calculate_path_reward(vehicle, waypoints, current_waypoint_idx):
+def calculate_path_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshold=0.1, target_speed=30):
     """
     Calculate path reward based on alignment of vehicle velocity with path direction.
     
@@ -198,6 +198,21 @@ def calculate_path_reward(vehicle, waypoints, current_waypoint_idx):
     
     # Scale the reward to emphasize alignment
     # This gives a higher reward for alignment and a penalty for going in the wrong direction
-    path_reward = alignment
+    path_reward = alignment * (velocity_magnitude / target_speed)
+
+    # Add waypoint reaching bonus
+    if waypoints and current_waypoint_idx < len(waypoints):
+        ego_location = vehicle.get_location()
+        next_waypoint = waypoints[current_waypoint_idx]
+        
+        # Distance to waypoint
+        distance = np.sqrt(
+            (ego_location.x - next_waypoint.x) ** 2 +
+            (ego_location.y - next_waypoint.y) ** 2
+        )
+        
+        # Additional reward for reaching waypoint
+        if distance < waypoint_threshold:
+            path_reward += 1.0
     
     return path_reward

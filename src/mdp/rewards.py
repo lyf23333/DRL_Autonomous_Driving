@@ -10,26 +10,9 @@ def calculate_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshol
     # Get current vehicle state
     velocity = vehicle.get_velocity()
     current_speed = 3.6 * np.sqrt(velocity.x**2 + velocity.y**2)  # km/h
-    acceleration = vehicle.get_acceleration()
-    current_accel = np.sqrt(acceleration.x**2 + acceleration.y**2)
     
     # Path following reward - using the new utility function
-    path_reward = calculate_path_reward(vehicle, waypoints, current_waypoint_idx)
-    
-    # Add waypoint reaching bonus
-    if waypoints and current_waypoint_idx < len(waypoints):
-        ego_location = vehicle.get_location()
-        next_waypoint = waypoints[current_waypoint_idx]
-        
-        # Distance to waypoint
-        distance = np.sqrt(
-            (ego_location.x - next_waypoint.x) ** 2 +
-            (ego_location.y - next_waypoint.y) ** 2
-        )
-        
-        # Additional reward for reaching waypoint
-        if distance < waypoint_threshold:
-            path_reward += 1.0
+    path_reward = calculate_path_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshold, target_speed)
     
     # Progress reward (based on speed)
     # Use trust-based target speed instead of fixed value
