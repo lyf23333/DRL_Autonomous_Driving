@@ -26,6 +26,7 @@ class DRLAgent:
                 verbose=1,
                 tensorboard_log="./tensorboard/",
                 n_epochs=5,
+                n_steps=512,
             )
         elif self.algorithm == 'sac':
             return SAC(

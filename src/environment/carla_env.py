@@ -96,11 +96,10 @@ class CarlaEnv(gym.Env):
         # Observation space includes vehicle state, path info, and intervention history
         self.observation_space = spaces.Dict({
             'vehicle_state': spaces.Box(
-                low=np.array([-np.inf] * 12),
-                high=np.array([np.inf] * 12),
+                low=np.array([-np.inf] * 16),
+                high=np.array([np.inf] * 16),
                 dtype=np.float32
-            ),  # [speed_x, speed_y, accel_x, accel_y, angular_velocity, steering, throttle, brake, 
-                #  distance_to_waypoint, angle_to_waypoint, next_waypoint_x, next_waypoint_y]
+            ),
             'recent_intervention': spaces.Discrete(2),  # Binary: 0 or 1
             'scenario_obs': spaces.Box(
                 low=-np.inf,
