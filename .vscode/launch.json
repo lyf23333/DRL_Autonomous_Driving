@@ -39,7 +39,8 @@
                 "--scenario=urban_traffic",
                 "--algorithm=ppo",
                 "--train",
-                "--render"
+                "--render",
+                "--start-carla"
             ],
             "console": "integratedTerminal",
             "justMyCode": true

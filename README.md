@@ -17,7 +17,6 @@ The project focuses on adapting autonomous vehicle behavior based on user's disp
 
 1. **Install CARLA Simulator**
 Follow the guiline described [here](https://carla.readthedocs.io/en/latest/start_quickstart/) to install carla simulator and python api required pacakge.
-
 Or you can follow the guide here:
 
 ```bash
@@ -32,7 +31,8 @@ sudo tar -xf CARLA_0.9.15.tar.gz -C /opt/carla-simulator
 echo 'export PYTHONPATH=$PYTHONPATH:/opt/carla-simulator/PythonAPI/carla/dist/carla-0.9.15-py3.7-linux-x86_64.egg' >> ~/.bashrc
 source ~/.bashrc
 ```
-3. **Verify CARLA Installation**
+
+2. **Verify CARLA Installation**
 ```bash
 # Start CARLA simulator
 cd /opt/carla-simulator
@@ -87,10 +87,64 @@ E.g.
 python3 src/main.py --scenario urban_traffic --algorithm ppo --train --render
 ```
 
+### Integrated CARLA Server Management
+
+The project now includes an integrated CARLA server manager that can automatically start and stop the CARLA simulator as part of your training or evaluation pipeline. This eliminates the need to manually start CARLA in a separate terminal.
+
+To use this feature, add the `--start-carla` flag to your command:
+
+**Training**:
+```bash
+python3 main.py --scenario urban_traffic --algorithm ppo --train --render --start-carla
+```
+**Training**:
+```bash
+python3 main.py --scenario urban_traffic --algorithm ppo --eval --render --start-carla
+```
+
+Additional CARLA server configuration options:
+
+```
+--carla-path PATH      Path to CARLA installation (if not set, will try to auto-detect)
+--port PORT            Port to run CARLA server on (default: 2000)
+--town TOWN            CARLA town/map to use (default: Town01)
+--quality {Low,Epic}   Graphics quality for CARLA (default: Epic)
+--offscreen            Run CARLA in offscreen mode (no rendering)
+```
+
+Examples:
+
+1. Start CARLA with a specific town and port:
+```bash
+python3 main.py --scenario urban_traffic --algorithm ppo --train --start-carla --town Town05 --port 2050
+```
+
+2. Run in low-quality mode for better performance:
+```bash
+python3 main.py --scenario lane_switching --algorithm sac --train --start-carla --quality Low
+```
+
+3. Run in headless mode (useful for servers without a display):
+```bash
+python3 main.py --scenario obstacle_avoidance --algorithm ppo --train --start-carla --offscreen
+```
+
+4. Specify a custom CARLA installation path:
+```bash
+python3 main.py --scenario urban_traffic --algorithm ppo --train --start-carla --carla-path /path/to/carla
+```
+
+The CARLA server will automatically shut down when your script exits, ensuring clean termination of all processes.
+
 ### Manual Scenario Testing
 The project includes a manual testing script that allows you to control the vehicle and test different scenarios:
 
-1. Start CARLA simulator:
+1. You can now start CARLA automatically with the test scripts:
+```bash
+python3 scripts/manual_scenario_test.py --scenario obstacle_avoidance --start-carla
+```
+
+Or manually start CARLA simulator:
 ```bash
 cd /opt/carla-simulator
 ./CarlaUE4.sh -quality-level=Low
@@ -105,6 +159,16 @@ python3 scripts/manual_scenario_test.py --scenario [scenario_name]
 3. Run the automatic testing script, in which the vehicle is controlled by a PID controller. In this case, you are in the role of the **human on the autonomous vehicle** and can provide real-time trust feedback to the RL agent by pressing space to brake. The agent is a PID controller that is set to adapt the speed based on the trust level.
 ```bash
 python3 scripts/automatic_scenario_test.py --scenario [scenario_name]
+```
+
+Both test scripts support the same CARLA server configuration options as the main script:
+```
+--start-carla           Start CARLA server automatically
+--carla-path PATH       Path to CARLA installation
+--port PORT             Port to run CARLA server on (default: 2000)
+--town TOWN             CARLA town/map to use (default: Town01)
+--quality {Low,Epic}    Graphics quality for CARLA (default: Epic)
+--offscreen             Run CARLA in offscreen mode (no rendering)
 ```
 
 Available scenarios:
