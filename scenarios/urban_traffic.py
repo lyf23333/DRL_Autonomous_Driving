@@ -152,26 +152,97 @@ class UrbanTrafficScenario:
             traffic_light.set_red_time(5.0)
     
     def get_scenario_specific_obs(self):
-        """Get scenario-specific observations"""
-        # Get nearest vehicle and its state
-        if not self.vehicles:
-            return np.zeros(5)
+        """Get scenario-specific observations for the three nearest vehicles
+        
+        Returns:
+            numpy.ndarray: Array of shape (15,) containing information about the three nearest vehicles:
+                - For each vehicle (3 vehicles):
+                    - Relative position x (in ego vehicle's coordinate frame)
+                    - Relative position y (in ego vehicle's coordinate frame)
+                    - Relative velocity x (in ego vehicle's coordinate frame)
+                    - Relative velocity y (in ego vehicle's coordinate frame)
+                    - Distance to the vehicle
+                
+        Note: Vehicles more than 20 meters away will have all their observation values set to 0.
+        """
+        # Initialize empty observation with zeros
+        num_nearest_vehicles = 3
+        obs = np.zeros(num_nearest_vehicles * 5)  # 5 values for each of 3 vehicles
+        
+        # If no vehicles or ego vehicle doesn't exist, return zeros
+        if not self.vehicles or not hasattr(self.env, 'vehicle') or self.env.vehicle is None:
+            return obs
             
-        ego_location = self.env.vehicle.get_location()
-        nearest_vehicle = min(self.vehicles, 
-                            key=lambda v: ego_location.distance(v.get_location()))
+        # Get ego vehicle information
+        ego_vehicle = self.env.vehicle
+        ego_location = ego_vehicle.get_location()
+        ego_transform = ego_vehicle.get_transform()
+        ego_forward = ego_transform.get_forward_vector()
+        ego_right = ego_transform.get_right_vector()
         
-        # Get nearest vehicle state
-        transform = nearest_vehicle.get_transform()
-        velocity = nearest_vehicle.get_velocity()
+        # Calculate distances to all vehicles
+        vehicle_distances = []
+        for i, vehicle in enumerate(self.vehicles):
+            # Skip if it's the ego vehicle or if vehicle is not alive
+            if vehicle.id == ego_vehicle.id or not vehicle.is_alive:
+                continue
+                
+            # Calculate distance
+            distance = ego_location.distance(vehicle.get_location())
+            
+            # Only consider vehicles within 20 meters
+            if distance <= 20.0:
+                vehicle_distances.append((distance, i))
         
-        return np.array([
-            transform.location.x,
-            transform.location.y,
-            transform.rotation.yaw,
-            velocity.x,
-            velocity.y
-        ])
+        # Sort by distance and take the three nearest
+        vehicle_distances.sort()
+        nearest_indices = [idx for _, idx in vehicle_distances[:3]]
+        
+        # Process the three nearest vehicles (or fewer if there aren't three)
+        for i, idx in enumerate(nearest_indices):
+            if i >= num_nearest_vehicles:  # Only process up to num_nearest_vehicles vehicles
+                break
+                
+            vehicle = self.vehicles[idx]
+            
+            # Get vehicle state
+            vehicle_location = vehicle.get_location()
+            vehicle_velocity = vehicle.get_velocity()
+            
+            # Calculate relative position vector in world coordinates
+            rel_location = carla.Vector3D(
+                x=vehicle_location.x - ego_location.x,
+                y=vehicle_location.y - ego_location.y,
+                z=0.0
+            )
+            
+            # Transform to ego vehicle's local coordinate system
+            # Forward = x-axis, Right = y-axis
+            rel_x = (rel_location.x * ego_forward.x + rel_location.y * ego_forward.y)
+            rel_y = (rel_location.x * ego_right.x + rel_location.y * ego_right.y)
+            
+            # Calculate relative velocity
+            rel_vel_x = vehicle_velocity.x - ego_vehicle.get_velocity().x
+            rel_vel_y = vehicle_velocity.y - ego_vehicle.get_velocity().y
+            
+            # Transform relative velocity to ego vehicle's coordinate system
+            rel_vel_local_x = (rel_vel_x * ego_forward.x + rel_vel_y * ego_forward.y)
+            rel_vel_local_y = (rel_vel_x * ego_right.x + rel_vel_y * ego_right.y)
+            
+            # Calculate distance
+            distance = ego_location.distance(vehicle_location)
+            
+            # Store in observation array (5 values per vehicle)
+            start_idx = i * 5
+            obs[start_idx:start_idx+5] = [
+                rel_x,              # Relative position x
+                rel_y,              # Relative position y
+                rel_vel_local_x,    # Relative velocity x
+                rel_vel_local_y,    # Relative velocity y
+                distance            # Distance to vehicle
+            ]
+        
+        return obs
     
     def check_scenario_completion(self):
         """Check if the urban traffic scenario is completed"""
