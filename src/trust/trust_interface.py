@@ -437,6 +437,7 @@ class TrustInterface:
         self.save_session_data()
         pygame.quit()
 
+
     def detect_interventions_and_update_trust(self, current_control, prev_control, world_snapshot=None):
         """
         Detect manual interventions based on control changes and update trust accordingly.
