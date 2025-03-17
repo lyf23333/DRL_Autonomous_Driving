@@ -57,6 +57,10 @@ class AutomaticController:
         self.throttle = 0.0
         self.brake = 0.0
         
+        # Speed limit settings
+        self.max_speed = 30.0  # Maximum speed in km/h
+        self.speed_limit_active = True  # Enable/disable speed limiting
+        
         # Statistics
         self.episode_reward = 0.0
         self.steps = 0
@@ -67,14 +71,6 @@ class AutomaticController:
         self.camera_surface = None
         self._setup_camera()
 
-        # Simple PID control parameters
-        self.prev_error = 0
-        self.integral = 0
-        
-        # Initialize trust-based speed control
-        self.base_target_speed = 20.0  # km/h at max trust
-        self.min_target_speed = 0.0   # km/h at min trust
-        self.target_speed = self.base_target_speed
 
     def run(self):
         """Main control loop"""
@@ -127,6 +123,18 @@ class AutomaticController:
                 # R for reset
                 elif event.key == pygame.K_r:
                     self.reset()
+                # L to toggle speed limit
+                elif event.key == pygame.K_l:
+                    self.speed_limit_active = not self.speed_limit_active
+                    status = "enabled" if self.speed_limit_active else "disabled"
+                    print(f"Speed limit {status} (max: {self.max_speed} km/h)")
+                # Plus/Minus to adjust speed limit
+                elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
+                    self.max_speed += 5.0
+                    print(f"Speed limit increased to {self.max_speed} km/h")
+                elif event.key == pygame.K_MINUS:
+                    self.max_speed = max(5.0, self.max_speed - 5.0)
+                    print(f"Speed limit decreased to {self.max_speed} km/h")
         
         # Get pressed keys
         keys = pygame.key.get_pressed()
@@ -139,9 +147,17 @@ class AutomaticController:
         else:
             self.steering = 0.0
         
+        # Get current vehicle speed
+        current_speed = self._get_current_speed()
+        
         # Throttle/Brake
         if keys[pygame.K_UP]:
-            self.throttle = min(1.0, self.throttle + 0.1)
+            # Only allow throttle increase if below speed limit or if limit is disabled
+            if not self.speed_limit_active or current_speed < self.max_speed:
+                self.throttle = min(1.0, self.throttle + 0.1)
+            else:
+                # Automatically reduce throttle when speed limit is reached
+                self.throttle = max(0.0, self.throttle - 0.1)
             self.brake = 0.0
         elif keys[pygame.K_DOWN]:
             self.brake = min(1.0, self.brake + 0.1)
@@ -149,6 +165,10 @@ class AutomaticController:
         else:
             self.throttle = 0.0
             self.brake = 0.0
+        
+        # Speed limit enforcement - override throttle if speed limit is active and exceeded
+        if self.speed_limit_active and current_speed >= self.max_speed and self.throttle > 0:
+            self.throttle = 0.0
         
         return True
 
@@ -239,6 +259,8 @@ def main():
                       help='Graphics quality for CARLA')
     parser.add_argument('--offscreen', action='store_true',
                       help='Run CARLA in offscreen mode (no rendering)')
+    parser.add_argument('--max-speed', type=float, default=40.0,
+                      help='Maximum speed limit in km/h')
     
     args = parser.parse_args()
     
@@ -281,6 +303,9 @@ def main():
         scenario_class=scenario_map[args.scenario]
     )
     
+    # Set the maximum speed from command line argument
+    controller.max_speed = args.max_speed
+    
     print("\nManual Control Instructions:")
     print("----------------------------")
     print("Arrow Keys: Control the vehicle")
@@ -288,8 +313,11 @@ def main():
     print("  ↓: Brake")
     print("  ←/→: Steer")
     print("Space: Record manual intervention")
+    print("L: Toggle speed limit")
+    print("+/-: Increase/decrease speed limit")
     print("R: Reset episode")
     print("ESC: Quit")
+    print(f"Speed limit: {controller.max_speed} km/h")
     print("----------------------------\n")
     
     try:
