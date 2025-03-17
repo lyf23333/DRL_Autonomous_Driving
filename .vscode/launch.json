@@ -41,7 +41,7 @@
                 "--train",
                 "--render",
                 "--start-carla",
-                // "--quality=Low"
+                "--quality=Low"
             ],
             "console": "integratedTerminal",
             "justMyCode": true

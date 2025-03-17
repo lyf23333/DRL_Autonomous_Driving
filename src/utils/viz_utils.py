@@ -206,7 +206,17 @@ def render_waypoints_on_camera(screen, sensors, camera_width, camera_height, way
         waypoint = waypoints[i]
         
         # Create a 3D point for the waypoint
-        waypoint_location = carla.Location(x=waypoint.x, y=waypoint.y, z=0.5)  # Assuming z=0.5 (slightly above ground)
+        # Check if it's a CARLA Waypoint object or a simple waypoint with x,y attributes
+        if hasattr(waypoint, 'transform'):
+            # It's a CARLA Waypoint object
+            waypoint_location = carla.Location(
+                x=waypoint.transform.location.x,
+                y=waypoint.transform.location.y,
+                z=waypoint.transform.location.z + 0.5  # Slightly above ground
+            )
+        else:
+            # It's a simple waypoint with x,y attributes
+            waypoint_location = carla.Location(x=waypoint.x, y=waypoint.y, z=0.5)
         
         # Transform waypoint to camera space
         waypoint_location_world = waypoint_location

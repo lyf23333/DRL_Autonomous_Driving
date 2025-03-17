@@ -1,135 +1,194 @@
 import carla
 import numpy as np
+import random
+import math
 
 
 def generate_control_from_action(action):
-    """
-    Generate a control object from an action
-    """
-    control = carla.VehicleControl()
-    control.steer = float(np.clip(action[0], -1.0, 1.0))
+    """Generate CARLA control from action
     
-    # Throttle and brake are combined in the second action value
-    throttle_brake = float(np.clip(action[1], -1.0, 1.0))
-    if throttle_brake >= 0.0:
-        control.throttle = throttle_brake
+    Args:
+        action: Action from the agent [steering, throttle/brake]
+        
+    Returns:
+        carla.VehicleControl: CARLA vehicle control
+    """
+    # Extract steering and throttle/brake from action
+    steering = float(action[0])
+    throttle_brake = float(action[1])
+    
+    # Create control object
+    control = carla.VehicleControl()
+    
+    # Set steering (clamp to [-1, 1])
+    control.steer = max(-1.0, min(1.0, steering))
+    
+    # Set throttle and brake based on throttle_brake value
+    if throttle_brake >= 0:
+        control.throttle = max(0.0, min(1.0, throttle_brake))
         control.brake = 0.0
     else:
         control.throttle = 0.0
-        control.brake = -throttle_brake
-
+        control.brake = max(0.0, min(1.0, -throttle_brake))
+    
+    # Set manual gear shift to False
+    control.manual_gear_shift = False
+    
     return control
 
 
-def spawn_ego_vehicle(world):
+def spawn_ego_vehicle(world, blueprint_name='vehicle.tesla.model3', spawn_point=None):
+    """Spawn ego vehicle in the world
+    
+    Args:
+        world: CARLA world object
+        blueprint_name: Name of the vehicle blueprint
+        spawn_point: Spawn point for the vehicle
+        
+    Returns:
+        tuple: (vehicle, spawn_point)
     """
-    Spawn an ego vehicle at a given spawn point
-    """
-    # Spawn vehicle
+    # Get the blueprint library
     blueprint_library = world.get_blueprint_library()
-    vehicle_bp = blueprint_library.find('vehicle.tesla.model3')
     
-    # Find a valid spawn point
-    spawn_points = world.get_map().get_spawn_points()
-    if not spawn_points:
-        raise ValueError("No spawn points available in the map")
-
-    # Try a few random spawn points
-    for _ in range(10):
-        spawn_point = np.random.choice(spawn_points)
-        vehicle = world.try_spawn_actor(vehicle_bp, spawn_point)
-        if vehicle is not None:
-            break
+    # Get the vehicle blueprint
+    vehicle_bp = blueprint_library.find(blueprint_name)
     
-    # If still failed, try all spawn points sequentially
+    # Set the vehicle color
+    if vehicle_bp.has_attribute('color'):
+        color = random.choice(vehicle_bp.get_attribute('color').recommended_values)
+        vehicle_bp.set_attribute('color', color)
+    
+    # Get a random spawn point if not provided
+    if spawn_point is None:
+        spawn_points = world.get_map().get_spawn_points()
+        spawn_point = random.choice(spawn_points)
+    
+    # Spawn the vehicle
+    vehicle = world.try_spawn_actor(vehicle_bp, spawn_point)
+    
+    # If spawning failed, try again with a different spawn point
     if vehicle is None:
-        for spawn_point in spawn_points:
+        spawn_points = world.get_map().get_spawn_points()
+        for i in range(10):  # Try 10 times
+            spawn_point = random.choice(spawn_points)
             vehicle = world.try_spawn_actor(vehicle_bp, spawn_point)
             if vehicle is not None:
                 break
     
-    # If all spawn points failed, raise an error
+    # If still failed, raise an error
     if vehicle is None:
-        raise RuntimeError("Failed to spawn vehicle at any spawn point")
-
+        raise RuntimeError("Failed to spawn vehicle after multiple attempts")
+    
     return vehicle, spawn_point
 
 
-def generate_random_waypoints(vehicle, world, path_length=10):
-    """Generate random waypoints for path following"""
-    if vehicle is None:
-        return
-        
-    # Clear existing waypoints
-    waypoints = []
-    current_waypoint_idx = 0
-    
-    # Get the current waypoint on the road
-    current_waypoint = world.get_map().get_waypoint(vehicle.get_location())
-    if current_waypoint is None:
-        return
-        
-    # Generate a path by following the road
-    next_waypoint = current_waypoint
-    for _ in range(path_length):
-        # Get next waypoint along the road
-        next_waypoints = next_waypoint.next(5.0)  # 5 meters between waypoints
-        if not next_waypoints:
-            break
-            
-        # At intersections, randomly choose a direction
-        if len(next_waypoints) > 1:
-            next_waypoint = np.random.choice(next_waypoints)
-        else:
-            next_waypoint = next_waypoints[0]
-            
-        # Convert CARLA waypoint to a simple object with x, y attributes
-        # This is needed because the observation space expects simple coordinates
-        class SimpleWaypoint:
-            def __init__(self, x, y):
-                self.x = x
-                self.y = y
-                
-        simple_waypoint = SimpleWaypoint(
-            next_waypoint.transform.location.x,
-            next_waypoint.transform.location.y
-        )
-        
-        waypoints.append(simple_waypoint)
-        
-    print(f"Generated {len(waypoints)} waypoints for path following")
-
-    return waypoints, current_waypoint_idx
-
-
-def process_collision(event, env):
-    """
-    Process collision events from CARLA
+def generate_random_waypoints(vehicle, world, num_waypoints=20, min_distance=5.0, max_distance=10.0):
+    """Generate random waypoints for path following
     
     Args:
-        event: The collision event from CARLA
-        env: The environment instance to update
+        vehicle: CARLA vehicle object
+        world: CARLA world object
+        num_waypoints: Number of waypoints to generate
+        min_distance: Minimum distance between waypoints
+        max_distance: Maximum distance between waypoints
         
     Returns:
-        collision_detected: Whether a collision was detected
-        collision_impulse: The impulse vector of the collision
+        tuple: (waypoints, current_waypoint_idx)
     """
-    # Set collision flag
-    collision_detected = True
+    # Get the map
+    carla_map = world.get_map()
     
-    # Get collision details
-    collision_actor = event.other_actor
-    impulse = event.normal_impulse
-    intensity = np.sqrt(impulse.x**2 + impulse.y**2 + impulse.z**2)
+    # Get the vehicle's current location
+    vehicle_location = vehicle.get_location()
     
-    # Create collision impulse array
-    collision_impulse = np.array([impulse.x, impulse.y, impulse.z])
+    # Get the nearest waypoint to the vehicle
+    current_waypoint = carla_map.get_waypoint(vehicle_location)
     
-    # Log collision details
-    actor_type = collision_actor.type_id if hasattr(collision_actor, 'type_id') else "unknown"
-    print(f"Collision detected with {actor_type}, intensity: {intensity:.2f}")
+    # Generate a path of waypoints
+    waypoints = [current_waypoint]
     
-    return collision_detected, collision_impulse
+    # Generate additional waypoints
+    for _ in range(num_waypoints):
+        # Get next waypoints
+        next_waypoints = waypoints[-1].next(random.uniform(min_distance, max_distance))
+        
+        # If there are no next waypoints, break
+        if not next_waypoints:
+            break
+        
+        # Choose a random next waypoint
+        next_waypoint = random.choice(next_waypoints)
+        
+        # Add to the list
+        waypoints.append(next_waypoint)
+    
+    return waypoints, 0
+
+
+def check_decision_points(vehicle, world, threshold_distance=20.0):
+    """Check if the vehicle is near a decision point (intersection, lane merge, etc.)
+    
+    Args:
+        vehicle: CARLA vehicle object
+        world: CARLA world object
+        threshold_distance: Distance threshold for decision points
+        
+    Returns:
+        bool: True if near a decision point, False otherwise
+    """
+    if vehicle is None:
+        return False
+        
+    # Get the map
+    carla_map = world.get_map()
+    
+    # Get the vehicle's current location
+    vehicle_location = vehicle.get_location()
+    
+    # Get the nearest waypoint to the vehicle
+    current_waypoint = carla_map.get_waypoint(vehicle_location)
+    
+    # Check if the waypoint is at a junction
+    if current_waypoint.is_junction:
+        return True
+    
+    # Check if there's a junction ahead within the threshold distance
+    waypoint = current_waypoint
+    distance = 0.0
+    
+    while distance < threshold_distance:
+        # Get next waypoints
+        next_waypoints = waypoint.next(2.0)  # 2.0 meters ahead
+        
+        # If there are no next waypoints, break
+        if not next_waypoints:
+            break
+        
+        # Choose the first next waypoint
+        waypoint = next_waypoints[0]
+        
+        # Update distance
+        distance += 2.0
+        
+        # Check if the waypoint is at a junction
+        if waypoint.is_junction:
+            return True
+    
+    # Check for lane merges or lane changes
+    left_lane = current_waypoint.get_left_lane()
+    right_lane = current_waypoint.get_right_lane()
+    
+    # If there's a lane to the left or right with the same road_id but different lane_id
+    if (left_lane and left_lane.lane_id != current_waypoint.lane_id and 
+        left_lane.road_id == current_waypoint.road_id):
+        return True
+    
+    if (right_lane and right_lane.lane_id != current_waypoint.lane_id and 
+        right_lane.road_id == current_waypoint.road_id):
+        return True
+    
+    return False
 
 
 def calculate_path_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshold=0.1, target_speed=30):
@@ -167,10 +226,22 @@ def calculate_path_reward(vehicle, waypoints, current_waypoint_idx, waypoint_thr
     next_waypoint = waypoints[current_waypoint_idx + 1]
     
     # Calculate path direction vector (from current to next waypoint)
-    path_vector = np.array([
-        next_waypoint.x - current_waypoint.x,
-        next_waypoint.y - current_waypoint.y
-    ])
+    # Handle both CARLA Waypoint objects and simple waypoints with x,y attributes
+    if hasattr(current_waypoint, 'transform'):
+        # CARLA Waypoint objects
+        current_loc = current_waypoint.transform.location
+        next_loc = next_waypoint.transform.location
+        path_vector = np.array([
+            next_loc.x - current_loc.x,
+            next_loc.y - current_loc.y
+        ])
+    else:
+        # Simple waypoints with x,y attributes
+        path_vector = np.array([
+            next_waypoint.x - current_waypoint.x,
+            next_waypoint.y - current_waypoint.y
+        ])
+    
     path_magnitude = np.linalg.norm(path_vector)
     
     # If waypoints are too close, use the direction to the current waypoint
@@ -180,7 +251,13 @@ def calculate_path_reward(vehicle, waypoints, current_waypoint_idx, waypoint_thr
         vehicle_pos = np.array([vehicle_location.x, vehicle_location.y])
         
         # Calculate direction to current waypoint
-        waypoint_pos = np.array([current_waypoint.x, current_waypoint.y])
+        if hasattr(current_waypoint, 'transform'):
+            # CARLA Waypoint
+            waypoint_pos = np.array([current_waypoint.transform.location.x, current_waypoint.transform.location.y])
+        else:
+            # Simple waypoint
+            waypoint_pos = np.array([current_waypoint.x, current_waypoint.y])
+            
         path_vector = waypoint_pos - vehicle_pos
         path_magnitude = np.linalg.norm(path_vector)
         
@@ -203,61 +280,24 @@ def calculate_path_reward(vehicle, waypoints, current_waypoint_idx, waypoint_thr
     # Add waypoint reaching bonus
     if waypoints and current_waypoint_idx < len(waypoints):
         ego_location = vehicle.get_location()
-        next_waypoint = waypoints[current_waypoint_idx]
         
-        # Distance to waypoint
-        distance = np.sqrt(
-            (ego_location.x - next_waypoint.x) ** 2 +
-            (ego_location.y - next_waypoint.y) ** 2
-        )
+        # Get location of the current waypoint
+        if hasattr(waypoints[current_waypoint_idx], 'transform'):
+            # CARLA Waypoint
+            waypoint_location = waypoints[current_waypoint_idx].transform.location
+            distance = np.sqrt(
+                (ego_location.x - waypoint_location.x) ** 2 +
+                (ego_location.y - waypoint_location.y) ** 2
+            )
+        else:
+            # Simple waypoint
+            distance = np.sqrt(
+                (ego_location.x - waypoints[current_waypoint_idx].x) ** 2 +
+                (ego_location.y - waypoints[current_waypoint_idx].y) ** 2
+            )
         
         # Additional reward for reaching waypoint
         if distance < waypoint_threshold:
             path_reward += 1.0
     
     return path_reward
-
-def check_decision_points(vehicle, world, decision_point_distance=20.0):
-    """Check if the vehicle is near a decision point (intersection, lane merge, etc.)"""
-    is_near_decision_point = False
-        
-    # Get current vehicle location
-    vehicle_location = vehicle.get_location()
-    
-    # Get current waypoint
-    current_waypoint = world.get_map().get_waypoint(vehicle_location)
-    if current_waypoint is None:
-        is_near_decision_point = False
-        return
-        
-    # Check for intersections
-    is_near_intersection = False
-    
-    # Look ahead for intersections
-    next_waypoints = current_waypoint.next(decision_point_distance)
-    for waypoint in next_waypoints:
-        if waypoint.is_intersection:
-            is_near_intersection = True
-            break
-            
-    # Check for lane merges or lane changes
-    is_near_lane_change = False
-    
-    # Check if there are multiple lane options ahead
-    if current_waypoint.get_right_lane() or current_waypoint.get_left_lane():
-        # Look ahead for lane changes
-        for distance in [5.0, 10.0, 15.0]:
-            next_waypoints = current_waypoint.next(distance)
-            for waypoint in next_waypoints:
-                if (waypoint.lane_id != current_waypoint.lane_id or 
-                    waypoint.lane_change == carla.LaneChange.Right or 
-                    waypoint.lane_change == carla.LaneChange.Left or
-                    waypoint.lane_change == carla.LaneChange.Both):
-                    is_near_lane_change = True
-                    break
-            if is_near_lane_change:
-                break
-    
-    # Update decision point status
-    is_near_decision_point = is_near_intersection or is_near_lane_change
-    return is_near_decision_point
