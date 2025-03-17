@@ -154,7 +154,7 @@ class AutomaticController:
         if keys[pygame.K_UP]:
             # Only allow throttle increase if below speed limit or if limit is disabled
             if not self.speed_limit_active or current_speed < self.max_speed:
-                self.throttle = min(1.0, self.throttle + 0.1)
+                self.throttle = min(0.5, self.throttle + 0.1)
             else:
                 # Automatically reduce throttle when speed limit is reached
                 self.throttle = 0.0

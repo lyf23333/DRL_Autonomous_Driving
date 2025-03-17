@@ -58,9 +58,6 @@ class TrustInterface:
             'acceleration_smoothness': 1.0,  # 0.0 (jerky) to 1.0 (smooth)
             'braking_smoothness': 1.0,  # 0.0 (abrupt) to 1.0 (smooth)
             'hesitation_level': 0.0,    # 0.0 (confident) to 1.0 (hesitant)
-            'disengagement_frequency': 0.0,  # 0.0 (rare) to 1.0 (frequent)
-            'lane_keeping': 1.0,
-            'speed_consistency': 1.0
         }
         
         # History for calculating smoothness
@@ -111,35 +108,6 @@ class TrustInterface:
             speed_ratio = (current_speed - self.speed_threshold_low) / speed_range
             return self.speed_factor_min + (self.speed_factor_max - self.speed_factor_min) * speed_ratio
         
-    def should_intervene(self, current_time, current_speed=0.0):
-        """Determine if an intervention should occur based on trust level and vehicle speed"""
-        # Check cooldown
-        if current_time - self.last_intervention_time < self.intervention_cooldown:
-            return False
-            
-        # Calculate speed-based intervention factor
-        speed_factor = self._calculate_speed_factor(current_speed)
-        
-        # Base probability from trust level, modified by speed factor
-        base_prob = (1 - self.trust_level) * self.self_intervention_facor
-        
-        # Adjust probability based on driving metrics
-        smoothness_factor = (2.0 - self.driving_metrics['acceleration_smoothness'] - 
-                            self.driving_metrics['braking_smoothness']) / 2.0
-        stability_factor = 1.0 - self.driving_metrics['steering_stability']
-        hesitation_factor = self.driving_metrics['hesitation_level']
-        
-        # Combine factors with appropriate weights
-        behavior_factor = 0.4 * smoothness_factor + 0.3 * stability_factor + 0.3 * hesitation_factor
-        
-        # Final intervention probability
-        intervention_prob = max(base_prob, speed_factor) + 0.2 * behavior_factor
-        
-        # Cap the final probability at 1.0
-        self.intervention_prob = min(1.0, intervention_prob)
-        
-        return random.random() < self.intervention_prob
-    
     def update_trust(self, intervention=False, intervention_type=None, dt=0.0):
         """
         Update trust level based on interventions, driving behavior, and smooth operation
@@ -243,14 +211,14 @@ class TrustInterface:
         if len(self.acceleration_history) > 1:
             # Detect abrupt acceleration
             if acceleration > self.abrupt_acceleration_threshold:
-                self.driving_metrics['acceleration_smoothness'] = max(0.0, self.driving_metrics['acceleration_smoothness'] - 0.2)
+                self.driving_metrics['acceleration_smoothness'] = max(0.0, self.driving_metrics['acceleration_smoothness'] - 0.05)
             else:
                 # Gradually recover smoothness
                 self.driving_metrics['acceleration_smoothness'] = min(1.0, self.driving_metrics['acceleration_smoothness'] + 0.02)
         
         # 4. Calculate braking smoothness
         if acceleration < self.abrupt_braking_threshold:
-            self.driving_metrics['braking_smoothness'] = max(0.0, self.driving_metrics['braking_smoothness'] - 0.2)
+            self.driving_metrics['braking_smoothness'] = max(0.0, self.driving_metrics['braking_smoothness'] - 0.05)
         else:
             # Gradually recover smoothness
             self.driving_metrics['braking_smoothness'] = min(1.0, self.driving_metrics['braking_smoothness'] + 0.02)
@@ -260,7 +228,7 @@ class TrustInterface:
             if self.hesitation_start_time is None:
                 self.hesitation_start_time = current_time
             elif current_time - self.hesitation_start_time > self.hesitation_threshold:
-                self.driving_metrics['hesitation_level'] = min(1.0, self.driving_metrics['hesitation_level'] + 0.2)
+                self.driving_metrics['hesitation_level'] = min(1.0, self.driving_metrics['hesitation_level'] + 0.05)
                 self.hesitation_start_time = None  # Reset after recording
         else:
             self.hesitation_start_time = None
@@ -327,96 +295,6 @@ class TrustInterface:
                 if self.intervention_timestamps else float('inf'),
             'driving_metrics': self.driving_metrics
         }
-        
-    def update_display(self):
-        """Update the trust feedback display with enhanced metrics"""
-        self.screen.fill(self.WHITE)
-        
-        # Draw trust level bar
-        bar_width = 600
-        bar_height = 30
-        x = 100
-        y = 30
-        
-        # Background bar
-        pygame.draw.rect(self.screen, self.BLACK, 
-                        (x, y, bar_width, bar_height), 2)
-        
-        # Trust level fill
-        fill_width = int(bar_width * self.trust_level)
-        pygame.draw.rect(self.screen, self.GREEN,
-                        (x, y, fill_width, bar_height))
-        
-        # Draw text
-        font = pygame.font.Font(None, 28)
-        trust_text = f"Trust Level: {self.trust_level:.2f}"
-        text_surface = font.render(trust_text, True, self.BLACK)
-        self.screen.blit(text_surface, (x, y - 25))
-        
-        # Draw intervention counts
-        y += 40
-        interventions = self.get_current_trust_state()['recent_interventions']
-        
-        intervention_texts = [
-            f"Recent Interventions: {interventions['total']}",
-            f"Braking: {interventions['brake']}",
-            f"Steering: {interventions['steer']}",
-            f"Hesitations: {interventions['hesitation']}"
-        ]
-        
-        for i, text in enumerate(intervention_texts):
-            text_surface = font.render(text, True, self.BLACK)
-            self.screen.blit(text_surface, (x, y + i * 25))
-        
-        # Draw driving metrics
-        y += 150
-        metrics = self.driving_metrics
-        
-        # Draw metric bars
-        metric_names = [
-            "Steering Stability", 
-            "Acceleration Smoothness", 
-            "Braking Smoothness",
-            "Confidence (vs Hesitation)",
-            "Engagement Consistency"
-        ]
-        
-        metric_values = [
-            metrics['steering_stability'],
-            metrics['acceleration_smoothness'],
-            metrics['braking_smoothness'],
-            1.0 - metrics['hesitation_level'],
-            1.0 - metrics['disengagement_frequency']
-        ]
-        
-        metric_colors = [
-            self.BLUE,
-            self.GREEN,
-            self.YELLOW,
-            self.GREEN,
-            self.BLUE
-        ]
-        
-        for i, (name, value, color) in enumerate(zip(metric_names, metric_values, metric_colors)):
-            # Draw label
-            text_surface = font.render(name, True, self.BLACK)
-            self.screen.blit(text_surface, (x, y + i * 25))
-            
-            # Draw background bar
-            pygame.draw.rect(self.screen, self.BLACK, 
-                            (x + 200, y + i * 25, 200, 20), 1)
-            
-            # Draw value bar
-            fill_width = int(200 * value)
-            pygame.draw.rect(self.screen, color,
-                            (x + 200, y + i * 25, fill_width, 20))
-            
-            # Draw value text
-            value_text = f"{value:.2f}"
-            text_surface = font.render(value_text, True, self.BLACK)
-            self.screen.blit(text_surface, (x + 410, y + i * 25))
-        
-        pygame.display.flip()
     
     def save_session_data(self):
         """Save the trust feedback data for the session"""
@@ -480,9 +358,6 @@ class TrustInterface:
             'acceleration_smoothness': 1.0,  # 0.0 (jerky) to 1.0 (smooth)
             'braking_smoothness': 1.0,  # 0.0 (abrupt) to 1.0 (smooth)
             'hesitation_level': 0.0,    # 0.0 (confident) to 1.0 (hesitant)
-            'disengagement_frequency': 0.0,  # 0.0 (rare) to 1.0 (frequent)
-            'lane_keeping': 1.0,
-            'speed_consistency': 1.0
         }
         self.behavior_adjustment = {
             'trust_level': 0.75,
@@ -516,3 +391,92 @@ class TrustInterface:
     def get_behavior_adjustment(self):
         """Get the current behavior adjustment parameters"""
         return self.behavior_adjustment 
+
+    def update_display(self):
+        """Update the trust feedback display with enhanced metrics"""
+        self.screen.fill(self.WHITE)
+        
+        # Draw trust level bar
+        bar_width = 600
+        bar_height = 30
+        x = 100
+        y = 30
+        
+        # Background bar
+        pygame.draw.rect(self.screen, self.BLACK, 
+                        (x, y, bar_width, bar_height), 2)
+        
+        # Trust level fill
+        fill_width = int(bar_width * self.trust_level)
+        pygame.draw.rect(self.screen, self.GREEN,
+                        (x, y, fill_width, bar_height))
+        
+        # Draw text
+        font = pygame.font.Font(None, 28)
+        trust_text = f"Trust Level: {self.trust_level:.2f}"
+        text_surface = font.render(trust_text, True, self.BLACK)
+        self.screen.blit(text_surface, (x, y - 25))
+        
+        # Draw intervention counts
+        y += 40
+        interventions = self.get_current_trust_state()['recent_interventions']
+        
+        intervention_texts = [
+            f"Recent Interventions: {interventions['total']}",
+            f"Braking: {interventions['brake']}",
+            f"Steering: {interventions['steer']}",
+            f"Hesitations: {interventions['hesitation']}"
+        ]
+        
+        for i, text in enumerate(intervention_texts):
+            text_surface = font.render(text, True, self.BLACK)
+            self.screen.blit(text_surface, (x, y + i * 25))
+        
+        # Draw driving metrics
+        y += 150
+        metrics = self.driving_metrics
+        
+        # Draw metric bars
+        metric_names = [
+            "Steering Stability", 
+            "Acceleration Smoothness", 
+            "Braking Smoothness",
+            "Confidence (vs Hesitation)",
+            "Engagement Consistency"
+        ]
+        
+        metric_values = [
+            metrics['steering_stability'],
+            metrics['acceleration_smoothness'],
+            metrics['braking_smoothness'],
+            1.0 - metrics['hesitation_level']
+        ]
+        
+        metric_colors = [
+            self.BLUE,
+            self.GREEN,
+            self.YELLOW,
+            self.GREEN,
+            self.BLUE
+        ]
+        
+        for i, (name, value, color) in enumerate(zip(metric_names, metric_values, metric_colors)):
+            # Draw label
+            text_surface = font.render(name, True, self.BLACK)
+            self.screen.blit(text_surface, (x, y + i * 25))
+            
+            # Draw background bar
+            pygame.draw.rect(self.screen, self.BLACK, 
+                            (x + 200, y + i * 25, 200, 20), 1)
+            
+            # Draw value bar
+            fill_width = int(200 * value)
+            pygame.draw.rect(self.screen, color,
+                            (x + 200, y + i * 25, fill_width, 20))
+            
+            # Draw value text
+            value_text = f"{value:.2f}"
+            text_surface = font.render(value_text, True, self.BLACK)
+            self.screen.blit(text_surface, (x + 410, y + i * 25))
+        
+        pygame.display.flip()
