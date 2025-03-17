@@ -274,7 +274,10 @@ class SensorManager:
         # Clean up old history entries (not seen recently)
         current_frame = self.world.get_snapshot().frame
         keys_to_remove = []
-        for key, history in self.radar_points_history.items():
+        
+        # Use a copy of the dictionary keys to avoid the "dictionary changed size during iteration" error
+        for key in list(self.radar_points_history.keys()):
+            history = self.radar_points_history[key]
             if current_frame - history['last_seen'] > 10:  # Not seen for 10 frames
                 keys_to_remove.append(key)
         
