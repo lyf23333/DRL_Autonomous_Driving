@@ -49,7 +49,7 @@ class CarlaEnv(gym.Env):
         
         # Behavior adjustment parameters
         self.behavior_adjustment = {
-            'trust_level': 0.5,
+            'trust_level': 0.75,
             'stability_factor': 1.0,
             'smoothness_factor': 1.0,
             'hesitation_factor': 1.0
@@ -127,7 +127,7 @@ class CarlaEnv(gym.Env):
                 dtype=np.float32
             )
         })
-
+        
         # Path following attributes
         self.waypoints = []
         self.current_waypoint_idx = 0
@@ -187,11 +187,17 @@ class CarlaEnv(gym.Env):
         # Set decision point status in trust interface
         self.trust_interface.set_near_decision_point(self.is_near_decision_point)
         
+        # Calculate time delta since last step
+        current_time = self.world.get_snapshot().timestamp.elapsed_seconds
+        dt = current_time - self.last_step_time if self.last_step_time is not None else 0.0
+        self.last_step_time = current_time
+        
         # Detect manual interventions based on control changes and update trust
         self.trust_interface.detect_interventions_and_update_trust(
             control, 
             self.prev_control, 
-            self.world.get_snapshot()
+            self.world.get_snapshot(),
+            dt=dt
         )
         
         # Update trust-based behavior parameters
@@ -244,7 +250,7 @@ class CarlaEnv(gym.Env):
         
         # Additional info
         info = {
-            'trust_level': self.trust_interface.trust_level if self.trust_interface else 0.5,
+            'trust_level': self.trust_interface.trust_level if self.trust_interface else 0.75,
             'current_speed': 3.6 * np.sqrt(self.vehicle.get_velocity().x**2 + self.vehicle.get_velocity().y**2) if self.vehicle else 0.0,
             'target_speed': self.target_speed,
             'step_count': self.step_count,
@@ -298,10 +304,11 @@ class CarlaEnv(gym.Env):
         # Reset trust-related attributes
         self.prev_control = None
         self.current_intervention_prob = 0.0
+        self.last_step_time = None
         
         # Reset behavior adjustment
         self.behavior_adjustment = {
-            'trust_level': 0.5,
+            'trust_level': 0.75,
             'stability_factor': 1.0,
             'smoothness_factor': 1.0,
             'hesitation_factor': 1.0
@@ -309,7 +316,7 @@ class CarlaEnv(gym.Env):
         
         # Reset termination manager
         self.termination_manager.reset()
-        
+            
         # Destroy existing vehicle if any
         if hasattr(self, 'vehicle') and self.vehicle is not None:
             # Clean up sensors
@@ -332,14 +339,14 @@ class CarlaEnv(gym.Env):
         
         # Generate random waypoints for the new vehicle position
         self.waypoints, self.current_waypoint_idx = generate_random_waypoints(self.vehicle, self.world)
-
+        
         # Setup active scenario if exists
         if self.active_scenario and not self.active_scenario.is_setup:
             self.active_scenario.setup()
-
+        
         # Tick the world to update
         self.world.tick()
-
+        
         # Get initial observation
         obs = get_obs(self.vehicle, self.waypoints, self.current_waypoint_idx, self.waypoint_threshold, self.trust_interface, self.active_scenario)
         
@@ -349,12 +356,12 @@ class CarlaEnv(gym.Env):
         # Additional info
         info = {
             'spawn_point': f"({self.spawn_point.location.x:.1f}, {self.spawn_point.location.y:.1f}, {self.spawn_point.location.z:.1f})",
-            'trust_level': self.trust_interface.trust_level if self.trust_interface else 0.5,
+            'trust_level': self.trust_interface.trust_level if self.trust_interface else 0.75,
             'target_speed': self.target_speed
         }
         
         return obs, info
-
+    
     def _update_trust_based_behavior(self):
         """Update vehicle behavior parameters based on trust level and driving metrics"""
         # Get current trust level
@@ -449,6 +456,7 @@ class CarlaEnv(gym.Env):
         # Low stability -> more conservative steering (reduced magnitude)
         steering_adjustment = 0.5 + 0.5 * stability_factor  # Range: 0.5 to 1.0
         adjusted_action[0] *= steering_adjustment
+        self.trust_interface.record_intervention('steer')
         
         # 2. Adjust throttle/brake based on trust and smoothness
         # Low trust or smoothness -> more gentle acceleration, stronger braking
@@ -460,6 +468,7 @@ class CarlaEnv(gym.Env):
             # Low trust -> increase braking force
             brake_adjustment = 1.0 + (1.0 - trust_level) * 0.5  # Range: 1.0 to 1.5
             adjusted_action[1] *= brake_adjustment
+        self.trust_interface.record_intervention('brake')
         
         # 3. Add hesitation effect (random small delays or reduced actions)
         hesitation_factor = 1.0 - self.behavior_adjustment['hesitation_factor']
@@ -467,21 +476,9 @@ class CarlaEnv(gym.Env):
             # Occasionally reduce action magnitude to simulate hesitation
             hesitation_reduction = 1.0 - (hesitation_factor * 0.5)  # Range: 0.85 to 0.5
             adjusted_action *= hesitation_reduction
-        
-        # Record that an intervention occurred this step
-        if hasattr(self, 'trust_interface') and self.trust_interface:
-            # Only count as intervention if the change is significant
-            if np.abs(adjusted_action - action).max() > 0.1:
-                self.trust_interface.intervention_active = True
-                
-                # Determine intervention type based on which component changed more
-                if abs(adjusted_action[0] - action[0]) > abs(adjusted_action[1] - action[1]):
-                    self.trust_interface.intervention_type = 'steer'
-                else:
-                    self.trust_interface.intervention_type = 'brake' if action[1] < 0 else 'throttle'
-        
+        self.trust_interface.record_intervention('hesitation')
         return adjusted_action
-
+    
     def close(self):
         """Clean up resources when environment is closed"""
         
@@ -500,7 +497,7 @@ class CarlaEnv(gym.Env):
             self.active_scenario.cleanup()
 
         # Clean up trust interface
-        self.trust_interface.cleanup()
+            self.trust_interface.cleanup()
             
         # Clean up pygame
         if hasattr(self, 'pygame_initialized') and self.pygame_initialized:
@@ -571,15 +568,3 @@ class CarlaEnv(gym.Env):
                 return camera_array  # Return the RGB array for 'rgb_array' mode
         
         return None
-
-    def record_manual_intervention(self, intervention_type='brake'):
-        """Record a manual intervention from external input (e.g., keyboard)"""
-        self.trust_interface.intervention_active = True
-        self.trust_interface.intervention_type = intervention_type
-        self.trust_interface.update_trust(intervention=True, intervention_type=intervention_type, dt=0.0)
-    
-    def record_disengagement(self):
-        """Record a system disengagement"""
-        self.trust_interface.intervention_active = True
-        self.trust_interface.intervention_type = 'disengage'
-        self.trust_interface.record_disengagement()
