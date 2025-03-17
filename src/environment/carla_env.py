@@ -10,6 +10,7 @@ from ..mdp.observation import get_obs
 from ..mdp.rewards import calculate_reward
 from ..utils.viz_utils import render_trust_visualization, render_waypoints_on_camera
 from ..utils.sensors import SensorManager
+from ..utils.termination_manager import TerminationManager
 
 class CarlaEnv(gym.Env):
     """Custom Carla environment that follows gymnasium interface"""
@@ -143,6 +144,9 @@ class CarlaEnv(gym.Env):
         self.show_waypoints = True  # Flag to toggle waypoint visualization
         self.waypoint_lookahead = 20  # Number of waypoints to show ahead
         
+        # Initialize termination manager
+        self.termination_manager = TerminationManager(max_episode_steps=self.max_episode_steps)
+        
     def set_scenario(self, scenario, config=None):
         """Set the active scenario for the environment"""
         self.active_scenario = scenario
@@ -217,7 +221,15 @@ class CarlaEnv(gym.Env):
         self.step_count += 1
         
         # Check if done
-        terminated, truncated = self._is_done()
+        terminated, truncated = self.termination_manager.check_termination(
+            self.vehicle, 
+            self.world, 
+            self.step_count, 
+            self.waypoints, 
+            self.current_waypoint_idx, 
+            self.active_scenario, 
+            self.sensor_manager.collision_detected
+        )
         
         # Get observation
         obs = get_obs(self.vehicle, self.waypoints, self.current_waypoint_idx, self.waypoint_threshold, self.trust_interface, self.active_scenario)
@@ -295,6 +307,9 @@ class CarlaEnv(gym.Env):
             'smoothness_factor': 1.0,
             'hesitation_factor': 1.0
         }
+        
+        # Reset termination manager
+        self.termination_manager.reset()
         
         # Destroy existing vehicle if any
         if hasattr(self, 'vehicle') and self.vehicle is not None:
@@ -508,81 +523,6 @@ class CarlaEnv(gym.Env):
             # Update trust with no intervention
             self.trust_interface.update_trust(intervention=False, dt=dt)
 
-    def _is_done(self):
-        """Check if episode is terminated or truncated
-        
-        In reinforcement learning environments:
-        - Termination: Natural end of an episode due to failure or impossible recovery.
-          The agent receives no further rewards after termination.
-        - Truncation: Artificial end of an episode due to time limits or successful completion.
-          The episode could have continued, but we choose to end it.
-        
-        Termination conditions (failure states):
-        - Vehicle doesn't exist
-        - Vehicle is off-road
-        - Vehicle is stuck (very low speed for extended time)
-        - Collision detected (if configured to terminate on collision)
-        
-        Truncation conditions (success or time limit):
-        - Scenario is completed successfully
-        - Vehicle reached the end of the path
-        - Maximum number of steps reached
-        
-        Returns:
-            terminated: True if the episode should be terminated (failure state)
-            truncated: True if the episode should be truncated (success or time limit)
-        """
-        # Initialize return values
-        terminated = False
-        truncated = False
-        
-        # Check if vehicle exists
-        if not hasattr(self, 'vehicle') or self.vehicle is None:
-            terminated = True
-            
-        # Check if active scenario is completed
-        if self.active_scenario and self.active_scenario.check_scenario_completion():
-            truncated = True
-            
-        # Check if vehicle reached the end of the path - TRUNCATE
-        if self.waypoints and self.current_waypoint_idx >= len(self.waypoints):
-            print("Episode truncated: Reached end of path")
-            truncated = True
-            
-        # Check if vehicle is off-road - TERMINATE
-        current_waypoint = self.world.get_map().get_waypoint(self.vehicle.get_location())
-        if current_waypoint is None:
-            print("Episode terminated: Vehicle is off-road")
-            terminated = True
-            
-        # Check if vehicle is stuck (very low speed for extended time) - TERMINATE
-        velocity = self.vehicle.get_velocity()
-        current_speed = 3.6 * np.sqrt(velocity.x**2 + velocity.y**2)  # km/h
-        
-        if not hasattr(self, 'low_speed_counter'):
-            self.low_speed_counter = 0
-            
-        if current_speed < 1.0:  # Less than 1 km/h
-            self.low_speed_counter += 1
-        else:
-            self.low_speed_counter = 0
-            
-        if self.low_speed_counter > 100:  # Stuck for too long
-            print("Episode terminated: Vehicle is stuck")
-            terminated = True
-            
-        # Check if maximum episode length reached - TRUNCATE
-        
-        if self.step_count >= self.max_episode_steps:
-            print(f"Episode truncated: Reached maximum episode length ({self.max_episode_steps} steps)")
-            truncated = True
-
-        # Check for collision
-        if self.sensor_manager and self.sensor_manager.collision_detected:
-            terminated = True
-            
-        return terminated, truncated
-    
     def close(self):
         """Clean up resources when environment is closed"""
         
