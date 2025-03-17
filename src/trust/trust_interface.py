@@ -91,6 +91,14 @@ class TrustInterface:
         # Previous control state for detecting changes
         self.prev_control = None
         
+        # Behavior adjustment parameters
+        self.behavior_adjustment = {
+            'trust_level': 0.75,
+            'stability_factor': 1.0,
+            'smoothness_factor': 1.0,
+            'hesitation_factor': 1.0
+        }
+        
     def _calculate_speed_factor(self, current_speed):
         """Calculate intervention factor based on current speed"""
         if current_speed <= self.speed_threshold_low:
@@ -463,3 +471,48 @@ class TrustInterface:
         else:
             self.update_trust(intervention=False, dt=dt)
             return False 
+
+    def reset(self):
+        """Reset the trust interface to initial state"""
+        self.trust_level = 0.75
+        self.driving_metrics = {
+            'steering_stability': 1.0,  # 0.0 (unstable) to 1.0 (stable)
+            'acceleration_smoothness': 1.0,  # 0.0 (jerky) to 1.0 (smooth)
+            'braking_smoothness': 1.0,  # 0.0 (abrupt) to 1.0 (smooth)
+            'hesitation_level': 0.0,    # 0.0 (confident) to 1.0 (hesitant)
+            'disengagement_frequency': 0.0,  # 0.0 (rare) to 1.0 (frequent)
+            'lane_keeping': 1.0,
+            'speed_consistency': 1.0
+        }
+        self.behavior_adjustment = {
+            'trust_level': 0.75,
+            'stability_factor': 1.0,
+            'smoothness_factor': 1.0,
+            'hesitation_factor': 1.0
+        }
+        
+
+    def update_behavior_adjustment(self):
+        """Update behavior adjustment parameters based on trust level and driving metrics"""
+        # Get current trust level
+        trust_level = self.trust_level
+        
+        # Get relevant metrics
+        stability_factor = self.driving_metrics['steering_stability']
+        smoothness_factor = (self.driving_metrics['acceleration_smoothness'] + 
+                           self.driving_metrics['braking_smoothness']) / 2.0
+        hesitation_factor = 1.0 - self.driving_metrics['hesitation_level']
+        
+        # Store these for potential use in action modification
+        self.behavior_adjustment = {
+            'trust_level': trust_level,
+            'stability_factor': stability_factor,
+            'smoothness_factor': smoothness_factor,
+            'hesitation_factor': hesitation_factor
+        }
+        
+        return self.behavior_adjustment
+        
+    def get_behavior_adjustment(self):
+        """Get the current behavior adjustment parameters"""
+        return self.behavior_adjustment 
