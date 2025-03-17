@@ -192,6 +192,7 @@ class CarlaEnv(gym.Env):
         )
         
         # Update trust-based behavior parameters in trust interface
+        self._update_target_speed()
         self.trust_interface.update_behavior_adjustment()
         
         # Update trust history for visualization
@@ -342,7 +343,7 @@ class CarlaEnv(gym.Env):
         
         return obs, info
     
-    def _update_trust_based_behavior(self):
+    def _update_target_speed(self):
         """Update vehicle behavior parameters based on trust level and driving metrics"""
         # Get current trust level
         trust_level = self.trust_interface.trust_level
