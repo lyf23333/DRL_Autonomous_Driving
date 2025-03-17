@@ -33,8 +33,6 @@ class CarlaEnv(gym.Env):
         # Trust-related attributes
         self.trust_interface = trust_interface
         self.last_step_time = None
-        self.intervention_active = False
-        self.intervention_type = None  # Track the type of intervention
         self.current_intervention_prob = 0.0  # Probability of intervention in current step
         
         # Decision point detection
@@ -190,7 +188,11 @@ class CarlaEnv(gym.Env):
         self.trust_interface.set_near_decision_point(self.is_near_decision_point)
         
         # Detect manual interventions based on control changes and update trust
-        self._detect_interventions_and_update_trust(control)
+        self.trust_interface.detect_interventions_and_update_trust(
+            control, 
+            self.prev_control, 
+            self.world.get_snapshot()
+        )
         
         # Update trust-based behavior parameters
         self._update_trust_based_behavior()
@@ -250,7 +252,7 @@ class CarlaEnv(gym.Env):
             'is_near_decision_point': self.is_near_decision_point,
             'behavior_adjustment': self.behavior_adjustment,
             'intervention_probability': self.current_intervention_prob,
-            'intervention_active': self.intervention_active
+            'intervention_active': self.trust_interface.intervention_active
         }
         
         return obs, reward, terminated, truncated, info
@@ -294,9 +296,6 @@ class CarlaEnv(gym.Env):
         }
         
         # Reset trust-related attributes
-        self.intervention_active = False
-        self.intervention_type = None
-        self.is_near_decision_point = False
         self.prev_control = None
         self.current_intervention_prob = 0.0
         
@@ -473,55 +472,15 @@ class CarlaEnv(gym.Env):
         if hasattr(self, 'trust_interface') and self.trust_interface:
             # Only count as intervention if the change is significant
             if np.abs(adjusted_action - action).max() > 0.1:
-                self.intervention_active = True
+                self.trust_interface.intervention_active = True
                 
                 # Determine intervention type based on which component changed more
                 if abs(adjusted_action[0] - action[0]) > abs(adjusted_action[1] - action[1]):
-                    self.intervention_type = 'steer'
+                    self.trust_interface.intervention_type = 'steer'
                 else:
-                    self.intervention_type = 'brake' if action[1] < 0 else 'throttle'
+                    self.trust_interface.intervention_type = 'brake' if action[1] < 0 else 'throttle'
         
         return adjusted_action
-    
-    def _detect_interventions_and_update_trust(self, current_control):
-        """Detect manual interventions based on control changes and update trust accordingly"""
-        if self.prev_control is None:
-            return
-            
-        # Check if an intervention was triggered by the action adjustment
-        if self.intervention_active:
-            # An intervention was already recorded by _adjust_action_based_on_trust
-            self.trust_interface.update_trust(intervention=True, intervention_type=self.intervention_type, dt=0.0)
-            
-            # Reset intervention flag after processing
-            self.intervention_active = False
-            self.intervention_type = None
-            return
-            
-        # Check for significant steering correction
-        steering_change = abs(current_control.steer - self.prev_control.steer)
-        if steering_change > self.trust_interface.steering_correction_threshold:
-            self.intervention_active = True
-            self.intervention_type = 'steer'
-            self.trust_interface.update_trust(intervention=True, intervention_type='steer', dt=0.0)
-            return
-            
-        # Check for sudden braking
-        if current_control.brake > 0.7 and self.prev_control.brake < 0.3:
-            self.intervention_active = True
-            self.intervention_type = 'brake'
-            self.trust_interface.update_trust(intervention=True, intervention_type='brake', dt=0.0)
-            return
-
-        # If no intervention detected, update trust normally
-        if not self.intervention_active:
-            # Calculate time delta
-            current_time = self.world.get_snapshot().timestamp.elapsed_seconds
-            dt = current_time - self.last_step_time if self.last_step_time is not None else 0.0
-            self.last_step_time = current_time
-            
-            # Update trust with no intervention
-            self.trust_interface.update_trust(intervention=False, dt=dt)
 
     def close(self):
         """Clean up resources when environment is closed"""
@@ -615,12 +574,12 @@ class CarlaEnv(gym.Env):
 
     def record_manual_intervention(self, intervention_type='brake'):
         """Record a manual intervention from external input (e.g., keyboard)"""
-        self.intervention_active = True
-        self.intervention_type = intervention_type
+        self.trust_interface.intervention_active = True
+        self.trust_interface.intervention_type = intervention_type
         self.trust_interface.update_trust(intervention=True, intervention_type=intervention_type, dt=0.0)
     
     def record_disengagement(self):
         """Record a system disengagement"""
-        self.intervention_active = True
-        self.intervention_type = 'disengage'
+        self.trust_interface.intervention_active = True
+        self.trust_interface.intervention_type = 'disengage'
         self.trust_interface.record_disengagement()

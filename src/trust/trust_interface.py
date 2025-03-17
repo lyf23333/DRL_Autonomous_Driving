@@ -5,6 +5,7 @@ from datetime import datetime
 import os
 import random
 import carla
+import time
 
 class TrustInterface:
     def __init__(self, screen_width=800, screen_height=200, port = 2000):
@@ -59,7 +60,9 @@ class TrustInterface:
             'acceleration_smoothness': 1.0,  # 0.0 (jerky) to 1.0 (smooth)
             'braking_smoothness': 1.0,  # 0.0 (abrupt) to 1.0 (smooth)
             'hesitation_level': 0.0,    # 0.0 (confident) to 1.0 (hesitant)
-            'disengagement_frequency': 0.0  # 0.0 (rare) to 1.0 (frequent)
+            'disengagement_frequency': 0.0,  # 0.0 (rare) to 1.0 (frequent)
+            'lane_keeping': 1.0,
+            'speed_consistency': 1.0
         }
         
         # History for calculating smoothness
@@ -86,6 +89,9 @@ class TrustInterface:
         self.last_update_time = 0.0
         self.hesitation_start_time = None
         self.near_decision_point = False
+        
+        # Previous control state for detecting changes
+        self.prev_control = None
         
     def _calculate_speed_factor(self, current_speed):
         """Calculate intervention factor based on current speed"""
@@ -436,4 +442,61 @@ class TrustInterface:
     def cleanup(self):
         """Clean up pygame resources"""
         self.save_session_data()
-        pygame.quit() 
+        pygame.quit()
+
+    def detect_interventions_and_update_trust(self, current_control, prev_control, world_snapshot=None):
+        """
+        Detect manual interventions based on control changes and update trust accordingly.
+        
+        Args:
+            current_control: Current vehicle control
+            prev_control: Previous vehicle control
+            world_snapshot: CARLA world snapshot for timestamp
+            
+        Returns:
+            intervention_detected: Whether an intervention was detected
+        """
+        if prev_control is None:
+            return False
+            
+        # Check if an intervention is already active
+        if self.intervention_active:
+            # An intervention was already recorded
+            self.update_trust(intervention=True, intervention_type=self.intervention_type, dt=0.0)
+            
+            # Reset intervention flag after processing
+            self.intervention_active = False
+            self.intervention_type = None
+            return True
+            
+        # Check for significant steering correction
+        steering_change = abs(current_control.steer - prev_control.steer)
+        if steering_change > self.steering_correction_threshold:
+            self.intervention_active = True
+            self.intervention_type = 'steer'
+            self.update_trust(intervention=True, intervention_type='steer', dt=0.0)
+            return True
+            
+        # Check for sudden braking
+        if current_control.brake > 0.7 and prev_control.brake < 0.3:
+            self.intervention_active = True
+            self.intervention_type = 'brake'
+            self.update_trust(intervention=True, intervention_type='brake', dt=0.0)
+            return True
+
+        # If no intervention detected, update trust normally
+        if not self.intervention_active:
+            # Calculate time delta
+            current_time = None
+            if world_snapshot:
+                current_time = world_snapshot.timestamp.elapsed_seconds
+            else:
+                current_time = time.time()
+                
+            dt = current_time - self.last_update_time if self.last_update_time is not None else 0.0
+            self.last_update_time = current_time
+            
+            # Update trust with no intervention
+            self.update_trust(intervention=False, dt=dt)
+            
+        return False 
