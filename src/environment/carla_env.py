@@ -49,7 +49,7 @@ class CarlaEnv(gym.Env):
         
         # Behavior adjustment parameters
         self.behavior_adjustment = {
-            'trust_level': 0.5,
+            'trust_level': 0.75,
             'stability_factor': 1.0,
             'smoothness_factor': 1.0,
             'hesitation_factor': 1.0
@@ -244,7 +244,7 @@ class CarlaEnv(gym.Env):
         
         # Additional info
         info = {
-            'trust_level': self.trust_interface.trust_level if self.trust_interface else 0.5,
+            'trust_level': self.trust_interface.trust_level if self.trust_interface else 0.75,
             'current_speed': 3.6 * np.sqrt(self.vehicle.get_velocity().x**2 + self.vehicle.get_velocity().y**2) if self.vehicle else 0.0,
             'target_speed': self.target_speed,
             'step_count': self.step_count,
@@ -301,7 +301,7 @@ class CarlaEnv(gym.Env):
         
         # Reset behavior adjustment
         self.behavior_adjustment = {
-            'trust_level': 0.5,
+            'trust_level': 0.75,
             'stability_factor': 1.0,
             'smoothness_factor': 1.0,
             'hesitation_factor': 1.0
@@ -349,7 +349,7 @@ class CarlaEnv(gym.Env):
         # Additional info
         info = {
             'spawn_point': f"({self.spawn_point.location.x:.1f}, {self.spawn_point.location.y:.1f}, {self.spawn_point.location.z:.1f})",
-            'trust_level': self.trust_interface.trust_level if self.trust_interface else 0.5,
+            'trust_level': self.trust_interface.trust_level if self.trust_interface else 0.75,
             'target_speed': self.target_speed
         }
         
@@ -449,6 +449,7 @@ class CarlaEnv(gym.Env):
         # Low stability -> more conservative steering (reduced magnitude)
         steering_adjustment = 0.5 + 0.5 * stability_factor  # Range: 0.5 to 1.0
         adjusted_action[0] *= steering_adjustment
+        self.trust_interface.record_intervention('steer')
         
         # 2. Adjust throttle/brake based on trust and smoothness
         # Low trust or smoothness -> more gentle acceleration, stronger braking
@@ -460,6 +461,7 @@ class CarlaEnv(gym.Env):
             # Low trust -> increase braking force
             brake_adjustment = 1.0 + (1.0 - trust_level) * 0.5  # Range: 1.0 to 1.5
             adjusted_action[1] *= brake_adjustment
+        self.trust_interface.record_intervention('brake')
         
         # 3. Add hesitation effect (random small delays or reduced actions)
         hesitation_factor = 1.0 - self.behavior_adjustment['hesitation_factor']
@@ -467,19 +469,7 @@ class CarlaEnv(gym.Env):
             # Occasionally reduce action magnitude to simulate hesitation
             hesitation_reduction = 1.0 - (hesitation_factor * 0.5)  # Range: 0.85 to 0.5
             adjusted_action *= hesitation_reduction
-        
-        # Record that an intervention occurred this step
-        if hasattr(self, 'trust_interface') and self.trust_interface:
-            # Only count as intervention if the change is significant
-            if np.abs(adjusted_action - action).max() > 0.1:
-                self.trust_interface.intervention_active = True
-                
-                # Determine intervention type based on which component changed more
-                if abs(adjusted_action[0] - action[0]) > abs(adjusted_action[1] - action[1]):
-                    self.trust_interface.intervention_type = 'steer'
-                else:
-                    self.trust_interface.intervention_type = 'brake' if action[1] < 0 else 'throttle'
-        
+        self.trust_interface.record_intervention('hesitation')
         return adjusted_action
 
     def close(self):

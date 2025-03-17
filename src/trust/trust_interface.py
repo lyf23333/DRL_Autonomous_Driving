@@ -27,7 +27,7 @@ class TrustInterface:
         self.BLUE = (0, 0, 255)
         
         # Trust metrics
-        self.trust_level = 0.5  # Range: 0.0 to 1.0
+        self.trust_level = 0.75  # Range: 0.0 to 1.0
         self.trust_increase_rate = 0.01  # Rate of trust increase during smooth operation
         self.trust_decrease_rate = 0.05  # Rate of trust decrease on intervention
         self.intervention_active = False
@@ -50,7 +50,6 @@ class TrustInterface:
         self.intervention_types = {
             'brake': [],       # Timestamps of brake interventions
             'steer': [],       # Timestamps of steering corrections
-            'disengage': [],   # Timestamps of system disengagements
             'hesitation': []   # Timestamps of hesitation events
         }
         
@@ -140,7 +139,7 @@ class TrustInterface:
         
         Args:
             intervention: Boolean indicating if an intervention occurred
-            intervention_type: Type of intervention ('brake', 'steer', 'disengage', 'hesitation')
+            intervention_type: Type of intervention ('brake', 'steer', 'hesitation')
             dt: Time delta since last update
         """
         current_time = self.world.get_snapshot().timestamp.elapsed_seconds
@@ -150,7 +149,6 @@ class TrustInterface:
             decrease_rates = {
                 'brake': self.trust_decrease_rate,
                 'steer': self.trust_decrease_rate * 0.7,  # Less impact than braking
-                'disengage': self.trust_decrease_rate * 1.5,  # More impact than braking
                 'hesitation': self.trust_decrease_rate * 0.5  # Less impact than braking
             }
             
@@ -180,8 +178,10 @@ class TrustInterface:
         Record a manual intervention with specific type
         
         Args:
-            intervention_type: Type of intervention ('brake', 'steer', 'disengage', 'hesitation')
+            intervention_type: Type of intervention ('brake', 'steer', 'hesitation')
         """
+        self.intervention_active = True
+        self.intervention_type = intervention_type
         timestamp = self.world.get_snapshot().timestamp.elapsed_seconds
         
         # Record in general intervention list
@@ -227,10 +227,6 @@ class TrustInterface:
             self.acceleration_history.pop(0)
         if len(self.steering_history) > self.max_history_length:
             self.steering_history.pop(0)
-        
-        # 1. Detect steering corrections
-        if abs(current_steering - self.last_steering) > self.steering_correction_threshold:
-            self.record_intervention('steer')
             
         # 2. Calculate steering stability
         if len(self.steering_history) > 1:
@@ -316,7 +312,6 @@ class TrustInterface:
             'total': self.get_recent_interventions(),
             'brake': self.get_recent_interventions_by_type('brake'),
             'steer': self.get_recent_interventions_by_type('steer'),
-            'disengage': self.get_recent_interventions_by_type('disengage'),
             'hesitation': self.get_recent_interventions_by_type('hesitation')
         }
         
@@ -361,7 +356,6 @@ class TrustInterface:
             f"Recent Interventions: {interventions['total']}",
             f"Braking: {interventions['brake']}",
             f"Steering: {interventions['steer']}",
-            f"Disengagements: {interventions['disengage']}",
             f"Hesitations: {interventions['hesitation']}"
         ]
         
@@ -429,7 +423,6 @@ class TrustInterface:
             'intervention_types': {
                 'brake': len(self.intervention_types['brake']),
                 'steer': len(self.intervention_types['steer']),
-                'disengage': len(self.intervention_types['disengage']),
                 'hesitation': len(self.intervention_types['hesitation'])
             },
             'final_driving_metrics': self.driving_metrics
@@ -468,35 +461,5 @@ class TrustInterface:
             self.intervention_active = False
             self.intervention_type = None
             return True
-            
-        # Check for significant steering correction
-        steering_change = abs(current_control.steer - prev_control.steer)
-        if steering_change > self.steering_correction_threshold:
-            self.intervention_active = True
-            self.intervention_type = 'steer'
-            self.update_trust(intervention=True, intervention_type='steer', dt=0.0)
-            return True
-            
-        # Check for sudden braking
-        if current_control.brake > 0.7 and prev_control.brake < 0.3:
-            self.intervention_active = True
-            self.intervention_type = 'brake'
-            self.update_trust(intervention=True, intervention_type='brake', dt=0.0)
-            return True
-
-        # If no intervention detected, update trust normally
-        if not self.intervention_active:
-            # Calculate time delta
-            current_time = None
-            if world_snapshot:
-                current_time = world_snapshot.timestamp.elapsed_seconds
-            else:
-                current_time = time.time()
-                
-            dt = current_time - self.last_update_time if self.last_update_time is not None else 0.0
-            self.last_update_time = current_time
-            
-            # Update trust with no intervention
-            self.update_trust(intervention=False, dt=dt)
             
         return False 
