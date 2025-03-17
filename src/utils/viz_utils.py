@@ -2,7 +2,7 @@ import pygame
 import math
 import carla
 
-def render_trust_visualization(screen, font, trust_interface, vehicle, camera_width, camera_height, trust_viz_height, reward_components, trust_history, max_trust_history):
+def render_trust_visualization(screen, font, trust_interface, vehicle, camera_width, camera_height, trust_viz_height, reward_components, trust_history, max_trust_history, target_speed):
     """Render trust level visualization below the camera view"""
     # Draw background for trust visualization
     trust_viz_rect = pygame.Rect(0, camera_height, camera_width, trust_viz_height)
@@ -23,9 +23,15 @@ def render_trust_visualization(screen, font, trust_interface, vehicle, camera_wi
     if vehicle:
         velocity = vehicle.get_velocity()
         speed = 3.6 * math.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2)  # m/s to km/h
+        
+        # Create and show speed text
         speed_text = font.render(f"Speed: {speed:.1f} km/h", True, (255, 255, 255))
         screen.blit(speed_text, (150, camera_height + 10))
         
+        # Add target speed in a separate section with a different color
+        target_text = font.render(f"Target: {target_speed:.1f} km/h", True, (255, 200, 0))  # Yellow color
+        screen.blit(target_text, (350, camera_height + 10))
+    
     # Draw a separator line
     pygame.draw.line(
         screen, 
@@ -130,7 +136,7 @@ def render_trust_visualization(screen, font, trust_interface, vehicle, camera_wi
         graph_left = 400
         graph_width = camera_width - graph_left - 10
         graph_top = camera_height + 40  # Start below the separator
-        graph_height = trust_viz_height - 50
+        graph_height = 140  # Fixed shorter height for the graph
         
         # Draw title for trust graph
         title_text = font.render("TRUST HISTORY", True, (200, 200, 200))
@@ -180,6 +186,40 @@ def render_trust_visualization(screen, font, trust_interface, vehicle, camera_wi
             current_trust = trust_history[-1]
             current_text = font.render(f"Current: {current_trust:.2f}", True, (255, 255, 255))
             screen.blit(current_text, (graph_left + graph_width - 120, graph_top - 20))
+    
+    # Add additional information at the bottom
+    bottom_section_y = camera_height + trust_viz_height - 60  # Position 60px from bottom
+    
+    # Draw a separator line
+    pygame.draw.line(
+        screen, 
+        (50, 50, 50), 
+        (0, bottom_section_y), 
+        (camera_width, bottom_section_y), 
+        1
+    )
+    
+    bottom_section_y += 10  # Add space after separator
+    
+    # Draw behavior adjustment info (no need to repeat target speed as it's now in the top line)
+    if trust_interface and hasattr(trust_interface, 'behavior_adjustment'):
+        behavior = trust_interface.behavior_adjustment
+        
+        # Draw a title for behavior parameters
+        behavior_title = font.render("Behavior Parameters:", True, (200, 200, 200))
+        screen.blit(behavior_title, (20, bottom_section_y))
+        
+        # Draw behavior parameters in a compact format
+        left_pos = 200  # Start position for behavior values
+        
+        for param, value in behavior.items():
+            if param == 'trust_level':
+                continue  # Skip trust level as it's already shown
+            
+            param_name = param.replace('_', ' ').title()
+            param_text = font.render(f"{param_name}: {value:.2f}", True, (200, 200, 200))
+            screen.blit(param_text, (left_pos, bottom_section_y))
+            left_pos += 200  # Space between parameters
 
 
 def render_waypoints_on_camera(screen, sensors, camera_width, camera_height, waypoints, current_waypoint_idx, waypoint_lookahead):

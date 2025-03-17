@@ -157,7 +157,7 @@ class AutomaticController:
                 self.throttle = min(1.0, self.throttle + 0.1)
             else:
                 # Automatically reduce throttle when speed limit is reached
-                self.throttle = max(0.0, self.throttle - 0.1)
+                self.throttle = 0.0
             self.brake = 0.0
         elif keys[pygame.K_DOWN]:
             self.brake = min(1.0, self.brake + 0.1)

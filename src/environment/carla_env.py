@@ -61,7 +61,7 @@ class CarlaEnv(gym.Env):
         # Trust visualization
         self.trust_history = []
         self.max_trust_history = 100  # Number of trust values to keep in history
-        self.trust_viz_height = 220  # Increased from 120 to 180 for more space
+        self.trust_viz_height = 280  # Increased from 220 to accommodate more information
         
         # Reward visualization
         self.reward_history = []
@@ -517,7 +517,8 @@ class CarlaEnv(gym.Env):
                         self.trust_viz_height, 
                         self.reward_components, 
                         self.trust_history, 
-                        self.max_trust_history
+                        self.max_trust_history,
+                        self.target_speed
                     )
                 
                 # Render radar visualization
