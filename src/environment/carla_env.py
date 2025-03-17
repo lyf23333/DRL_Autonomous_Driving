@@ -127,7 +127,7 @@ class CarlaEnv(gym.Env):
                 dtype=np.float32
             )
         })
-
+        
         # Path following attributes
         self.waypoints = []
         self.current_waypoint_idx = 0
@@ -187,11 +187,17 @@ class CarlaEnv(gym.Env):
         # Set decision point status in trust interface
         self.trust_interface.set_near_decision_point(self.is_near_decision_point)
         
+        # Calculate time delta since last step
+        current_time = self.world.get_snapshot().timestamp.elapsed_seconds
+        dt = current_time - self.last_step_time if self.last_step_time is not None else 0.0
+        self.last_step_time = current_time
+        
         # Detect manual interventions based on control changes and update trust
         self.trust_interface.detect_interventions_and_update_trust(
             control, 
             self.prev_control, 
-            self.world.get_snapshot()
+            self.world.get_snapshot(),
+            dt=dt
         )
         
         # Update trust-based behavior parameters
@@ -298,6 +304,7 @@ class CarlaEnv(gym.Env):
         # Reset trust-related attributes
         self.prev_control = None
         self.current_intervention_prob = 0.0
+        self.last_step_time = None
         
         # Reset behavior adjustment
         self.behavior_adjustment = {
@@ -309,7 +316,7 @@ class CarlaEnv(gym.Env):
         
         # Reset termination manager
         self.termination_manager.reset()
-        
+            
         # Destroy existing vehicle if any
         if hasattr(self, 'vehicle') and self.vehicle is not None:
             # Clean up sensors
@@ -332,14 +339,14 @@ class CarlaEnv(gym.Env):
         
         # Generate random waypoints for the new vehicle position
         self.waypoints, self.current_waypoint_idx = generate_random_waypoints(self.vehicle, self.world)
-
+        
         # Setup active scenario if exists
         if self.active_scenario and not self.active_scenario.is_setup:
             self.active_scenario.setup()
-
+        
         # Tick the world to update
         self.world.tick()
-
+        
         # Get initial observation
         obs = get_obs(self.vehicle, self.waypoints, self.current_waypoint_idx, self.waypoint_threshold, self.trust_interface, self.active_scenario)
         
@@ -354,7 +361,7 @@ class CarlaEnv(gym.Env):
         }
         
         return obs, info
-
+    
     def _update_trust_based_behavior(self):
         """Update vehicle behavior parameters based on trust level and driving metrics"""
         # Get current trust level
@@ -471,7 +478,7 @@ class CarlaEnv(gym.Env):
             adjusted_action *= hesitation_reduction
         self.trust_interface.record_intervention('hesitation')
         return adjusted_action
-
+    
     def close(self):
         """Clean up resources when environment is closed"""
         
@@ -490,7 +497,7 @@ class CarlaEnv(gym.Env):
             self.active_scenario.cleanup()
 
         # Clean up trust interface
-        self.trust_interface.cleanup()
+            self.trust_interface.cleanup()
             
         # Clean up pygame
         if hasattr(self, 'pygame_initialized') and self.pygame_initialized:
@@ -561,15 +568,3 @@ class CarlaEnv(gym.Env):
                 return camera_array  # Return the RGB array for 'rgb_array' mode
         
         return None
-
-    def record_manual_intervention(self, intervention_type='brake'):
-        """Record a manual intervention from external input (e.g., keyboard)"""
-        self.trust_interface.intervention_active = True
-        self.trust_interface.intervention_type = intervention_type
-        self.trust_interface.update_trust(intervention=True, intervention_type=intervention_type, dt=0.0)
-    
-    def record_disengagement(self):
-        """Record a system disengagement"""
-        self.trust_interface.intervention_active = True
-        self.trust_interface.intervention_type = 'disengage'
-        self.trust_interface.record_disengagement()

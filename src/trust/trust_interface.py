@@ -158,7 +158,6 @@ class TrustInterface:
             
             # Record intervention
             self.last_intervention_time = current_time
-            self.record_intervention(intervention_type)
         else:
             # Calculate trust increase based on driving metrics
             smoothness_factor = (self.driving_metrics['acceleration_smoothness'] + 
@@ -171,7 +170,7 @@ class TrustInterface:
             
             # Gradually increase trust during smooth operation, adjusted by behavior
             adjusted_increase_rate = self.trust_increase_rate * behavior_multiplier
-            self.trust_level = min(1.0, self.trust_level + adjusted_increase_rate * dt)
+            self.trust_level = min(1.0, self.trust_level + adjusted_increase_rate)
     
     def record_intervention(self, intervention_type='brake'):
         """
@@ -254,7 +253,6 @@ class TrustInterface:
             if self.hesitation_start_time is None:
                 self.hesitation_start_time = current_time
             elif current_time - self.hesitation_start_time > self.hesitation_threshold:
-                self.record_intervention('hesitation')
                 self.driving_metrics['hesitation_level'] = min(1.0, self.driving_metrics['hesitation_level'] + 0.2)
                 self.hesitation_start_time = None  # Reset after recording
         else:
@@ -438,7 +436,7 @@ class TrustInterface:
         pygame.quit()
 
 
-    def detect_interventions_and_update_trust(self, current_control, prev_control, world_snapshot=None):
+    def detect_interventions_and_update_trust(self, current_control, prev_control, world_snapshot=None, dt=0.0):
         """
         Detect manual interventions based on control changes and update trust accordingly.
         
@@ -446,6 +444,7 @@ class TrustInterface:
             current_control: Current vehicle control
             prev_control: Previous vehicle control
             world_snapshot: CARLA world snapshot for timestamp
+            dt: Time delta since last update
             
         Returns:
             intervention_detected: Whether an intervention was detected
@@ -456,11 +455,12 @@ class TrustInterface:
         # Check if an intervention is already active
         if self.intervention_active:
             # An intervention was already recorded
-            self.update_trust(intervention=True, intervention_type=self.intervention_type, dt=0.0)
+            self.update_trust(intervention=True, intervention_type=self.intervention_type, dt=dt)
             
             # Reset intervention flag after processing
             self.intervention_active = False
             self.intervention_type = None
             return True
-            
-        return False 
+        else:
+            self.update_trust(intervention=False, dt=dt)
+            return False 
