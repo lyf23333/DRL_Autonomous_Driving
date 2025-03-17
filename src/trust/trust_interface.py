@@ -5,7 +5,6 @@ from datetime import datetime
 import os
 import random
 import carla
-import time
 
 class TrustInterface:
     def __init__(self, screen_width=800, screen_height=200, port = 2000):

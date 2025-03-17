@@ -319,11 +319,6 @@ class CarlaEnv(gym.Env):
             
         # Destroy existing vehicle if any
         if hasattr(self, 'vehicle') and self.vehicle is not None:
-            # Clean up sensors
-            if self.sensor_manager:
-                self.sensor_manager.cleanup_sensors()
-            
-            # Then destroy vehicle
             if self.vehicle.is_alive:
                 self.vehicle.destroy()
             self.vehicle = None
@@ -333,6 +328,7 @@ class CarlaEnv(gym.Env):
         
         # Setup sensor manager with the new vehicle
         if self.sensor_manager:
+            self.sensor_manager.reset()
             self.sensor_manager.set_vehicle(self.vehicle)
         else:
             self.sensor_manager = SensorManager(self.world, self.vehicle, self.render_mode)

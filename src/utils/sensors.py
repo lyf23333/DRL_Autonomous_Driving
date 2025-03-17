@@ -49,7 +49,7 @@ class SensorManager:
             return
             
         # Clean up existing sensors if any
-        self.cleanup_sensors()
+        self._cleanup_sensors()
         
         blueprint_library = self.world.get_blueprint_library()
         
@@ -436,7 +436,7 @@ class SensorManager:
         self.radar_points_history = {}
         self.camera_image = None
     
-    def cleanup_sensors(self):
+    def _cleanup_sensors(self):
         """Clean up all sensors"""
         for sensor in self.sensors.values():
             if sensor and sensor.is_alive:
