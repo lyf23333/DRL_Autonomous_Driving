@@ -57,6 +57,10 @@ class AutomaticController:
         self.throttle = 0.0
         self.brake = 0.0
         
+        # Speed limit settings
+        self.max_speed = 30.0  # Maximum speed in km/h
+        self.speed_limit_active = True  # Enable/disable speed limiting
+        
         # Statistics
         self.episode_reward = 0.0
         self.steps = 0
@@ -67,63 +71,41 @@ class AutomaticController:
         self.camera_surface = None
         self._setup_camera()
 
-        # Simple PID control parameters
-        self.prev_error = 0
-        self.integral = 0
-        
-        # Initialize trust-based speed control
-        self.base_target_speed = 20.0  # km/h at max trust
-        self.min_target_speed = 0.0   # km/h at min trust
-        self.target_speed = self.base_target_speed
 
     def run(self):
         """Main control loop"""
-        try:
-            self.reset()
-            running = True
-            
-            while running:
-                # Handle input and check if should continue
-                running = self._handle_input()
-                
-                # Create action array
-                action = np.array([
-                    self.steering,
-                    self.throttle if self.throttle > 0 else -self.brake
-                ])
-                if not running:
-                    break
-                
-                self.update_trust_based_speed()
-                
-                # Step environment
-                obs, reward, done, info = self.env.step(action)
-                self.episode_reward += reward
-                self.steps += 1
-                
-                # Update displays
-                self.display_info(info)
-                self._update_plots()
-                
-                # Check if episode is done
-                if done:
-                    print("\nEpisode finished!")
-                    print(f"Total steps: {self.steps}")
-                    print(f"Total reward: {self.episode_reward:.2f}")
-                    print(f"Average trust level: {info['trust_level']:.2f}")
-                    if info.get('scenario_complete', False):
-                        print("Scenario completed successfully!")
-                    self.reset()
-                
-                # Small delay to make control manageable
-                pygame.time.wait(50)
+        self.reset()
+        running = True
         
-        finally:
-            if self.camera is not None:
-                self.camera.destroy()
-            pygame.quit()
-            self.env.close()
-            self.env.trust_interface.cleanup()
+        while running:
+            # Handle input and check if should continue
+            running = self._handle_input()
+            
+            # Create action array
+            action = np.array([
+                self.steering,
+                self.throttle if self.throttle > 0 else -self.brake
+            ])
+            if not running:
+                break
+            
+            # Step environment
+            _, reward, done, _, info = self.env.step(action)
+            self.episode_reward += reward
+            self.steps += 1
+            
+            # Check if episode is done
+            if done:
+                print("\nEpisode finished!")
+                print(f"Total steps: {self.steps}")
+                print(f"Total reward: {self.episode_reward:.2f}")
+                print(f"Average trust level: {info['trust_level']:.2f}")
+                if info.get('scenario_complete', False):
+                    print("Scenario completed successfully!")
+                self.reset()
+            
+            # Small delay to make control manageable
+            pygame.time.wait(50)
 
     def _handle_input(self):
         """Handle keyboard input"""
@@ -141,6 +123,18 @@ class AutomaticController:
                 # R for reset
                 elif event.key == pygame.K_r:
                     self.reset()
+                # L to toggle speed limit
+                elif event.key == pygame.K_l:
+                    self.speed_limit_active = not self.speed_limit_active
+                    status = "enabled" if self.speed_limit_active else "disabled"
+                    print(f"Speed limit {status} (max: {self.max_speed} km/h)")
+                # Plus/Minus to adjust speed limit
+                elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
+                    self.max_speed += 5.0
+                    print(f"Speed limit increased to {self.max_speed} km/h")
+                elif event.key == pygame.K_MINUS:
+                    self.max_speed = max(5.0, self.max_speed - 5.0)
+                    print(f"Speed limit decreased to {self.max_speed} km/h")
         
         # Get pressed keys
         keys = pygame.key.get_pressed()
@@ -153,9 +147,17 @@ class AutomaticController:
         else:
             self.steering = 0.0
         
+        # Get current vehicle speed
+        current_speed = self._get_current_speed()
+        
         # Throttle/Brake
         if keys[pygame.K_UP]:
-            self.throttle = min(1.0, self.throttle + 0.1)
+            # Only allow throttle increase if below speed limit or if limit is disabled
+            if not self.speed_limit_active or current_speed < self.max_speed:
+                self.throttle = min(0.5, self.throttle + 0.1)
+            else:
+                # Automatically reduce throttle when speed limit is reached
+                self.throttle = 0.0
             self.brake = 0.0
         elif keys[pygame.K_DOWN]:
             self.brake = min(1.0, self.brake + 0.1)
@@ -164,13 +166,11 @@ class AutomaticController:
             self.throttle = 0.0
             self.brake = 0.0
         
+        # Speed limit enforcement - override throttle if speed limit is active and exceeded
+        if self.speed_limit_active and current_speed >= self.max_speed and self.throttle > 0:
+            self.throttle = 0.0
+        
         return True
-
-    def update_trust_based_speed(self):
-        """Calculate target speed based on trust level"""
-        # Linear interpolation between min and max speed based on trust
-        trust_level = self.env.trust_interface.trust_level
-        self.target_speed = self.min_target_speed + (self.base_target_speed - self.min_target_speed) * trust_level
 
     def reset(self):
         """Reset the environment and scenario"""
@@ -179,68 +179,6 @@ class AutomaticController:
         self.steps = 0
         self.start_time = datetime.now()
         self._setup_camera()  # Reset camera when environment resets
-
-    def display_info(self, info):
-        """Display current control and scenario information"""
-        # Clear info surface
-        self.info_surface.fill((255, 255, 255))
-        
-        # Create font
-        font = pygame.font.Font(None, 36)
-        
-        # Draw trust level bar
-        bar_width = 200
-        bar_height = 20
-        x = 320
-        y = 15
-        
-        # Trust bar (green)
-        pygame.draw.rect(self.info_surface, (0, 0, 0), (x, y, bar_width, bar_height), 2)
-        fill_width = int(bar_width * info['trust_level'])
-        pygame.draw.rect(self.info_surface, (0, 255, 0), (x, y, fill_width, bar_height))
-        
-        # Intervention probability bar (red)
-        y = 55
-        pygame.draw.rect(self.info_surface, (0, 0, 0), (x, y, bar_width, bar_height), 2)
-        fill_width = int(bar_width * self.env.trust_interface.intervention_prob)
-        pygame.draw.rect(self.info_surface, (255, 0, 0), (x, y, fill_width, bar_height))
-        
-        # Display control info
-        texts = [
-            f"Trust Level: {info['trust_level']:.2f}",
-            f"Intervention Prob: {self.env.trust_interface.intervention_prob:.2f}",
-            f"Target Speed: {self.target_speed:.1f} km/h",
-            f"Current Speed: {self._get_current_speed():.1f} km/h",
-            f"Intervention Active: {'Yes' if self.env.trust_interface.intervention_active else 'No'}",
-            f"Reward: {self.episode_reward:.2f}",
-            f"Steps: {self.steps}",
-            f"Time: {(datetime.now() - self.start_time).seconds}s"
-        ]
-        
-        for i, text in enumerate(texts):
-            text_surface = font.render(text, True, (0, 0, 0))
-            self.info_surface.blit(text_surface, (10, 10 + i * 40))
-        
-        # Display behavior adjustments if available
-        if 'behavior_adjustment' in info:
-            behavior = info['behavior_adjustment']
-            behavior_texts = [
-                f"Behavior Factor: {behavior['behavior_factor']:.2f}",
-                f"Steering Stability: {behavior['stability_factor']:.2f}",
-                f"Smoothness: {behavior['smoothness_factor']:.2f}",
-                f"Hesitation: {1.0 - behavior['hesitation_factor']:.2f}"
-            ]
-            
-            for i, text in enumerate(behavior_texts):
-                text_surface = font.render(text, True, (0, 0, 150))
-                self.info_surface.blit(text_surface, (400, 10 + i * 40))
-        
-        # Update main display
-        if self.camera_surface is not None:
-            self.screen.blit(self.camera_surface, (0, 0))
-        self.screen.blit(self.info_surface, (0, self.camera_height))
-        
-        pygame.display.flip()
 
     """
     Helper functions
@@ -293,24 +231,6 @@ class AutomaticController:
         
         # Blit the image onto the camera surface
         self.camera_surface.blit(pygame_image, (0, 0))
-
-    def _update_plots(self):
-        """Update trust history plots"""
-        current_time = (datetime.now() - self.start_time).total_seconds()
-        self.trust_history.append(self.env.trust_interface.trust_level)
-        self.time_history.append(current_time)
-        
-        # Create plot
-        plt.clf()
-        plt.plot(list(self.time_history), list(self.trust_history), 'g-')
-        plt.xlabel('Time (s)')
-        plt.ylabel('Trust Level')
-        plt.title('Trust Level Over Time')
-        plt.grid(True)
-        plt.ylim(0, 1)
-        
-        # Save plot
-        plt.savefig('trust_plot.png')
      
     def _get_current_speed(self):
         """Get current vehicle speed in km/h"""
@@ -339,6 +259,8 @@ def main():
                       help='Graphics quality for CARLA')
     parser.add_argument('--offscreen', action='store_true',
                       help='Run CARLA in offscreen mode (no rendering)')
+    parser.add_argument('--max-speed', type=float, default=40.0,
+                      help='Maximum speed limit in km/h')
     
     args = parser.parse_args()
     
@@ -371,7 +293,8 @@ def main():
     env = CarlaEnv(
         trust_interface=TrustInterface(),
         town=args.town,
-        port=args.port
+        port=args.port,
+        render_mode=True
     )
     
     # Create and run manual controller
@@ -380,6 +303,9 @@ def main():
         scenario_class=scenario_map[args.scenario]
     )
     
+    # Set the maximum speed from command line argument
+    controller.max_speed = args.max_speed
+    
     print("\nManual Control Instructions:")
     print("----------------------------")
     print("Arrow Keys: Control the vehicle")
@@ -387,8 +313,11 @@ def main():
     print("  ↓: Brake")
     print("  ←/→: Steer")
     print("Space: Record manual intervention")
+    print("L: Toggle speed limit")
+    print("+/-: Increase/decrease speed limit")
     print("R: Reset episode")
     print("ESC: Quit")
+    print(f"Speed limit: {controller.max_speed} km/h")
     print("----------------------------\n")
     
     try:

@@ -5,7 +5,6 @@ from datetime import datetime
 import os
 import random
 import carla
-import time
 
 class TrustInterface:
     def __init__(self, screen_width=800, screen_height=200, port = 2000):
@@ -29,7 +28,7 @@ class TrustInterface:
         # Trust metrics
         self.trust_level = 0.75  # Range: 0.0 to 1.0
         self.trust_increase_rate = 0.01  # Rate of trust increase during smooth operation
-        self.trust_decrease_rate = 0.05  # Rate of trust decrease on intervention
+        self.trust_decrease_rate = 0.1  # Rate of trust decrease on intervention
         self.intervention_active = False
         
         # Speed-based intervention parameters
@@ -59,9 +58,6 @@ class TrustInterface:
             'acceleration_smoothness': 1.0,  # 0.0 (jerky) to 1.0 (smooth)
             'braking_smoothness': 1.0,  # 0.0 (abrupt) to 1.0 (smooth)
             'hesitation_level': 0.0,    # 0.0 (confident) to 1.0 (hesitant)
-            'disengagement_frequency': 0.0,  # 0.0 (rare) to 1.0 (frequent)
-            'lane_keeping': 1.0,
-            'speed_consistency': 1.0
         }
         
         # History for calculating smoothness
@@ -75,7 +71,7 @@ class TrustInterface:
         self.abrupt_braking_threshold = -4.0      # m/s²
         self.hesitation_threshold = 1.5           # seconds of low speed near decision points
         
-        self.intervention_prob = 0.0
+        self.current_intervention_prob = 0.0
         
         # Setup data logging
         self.data_dir = "data/trust_feedback"
@@ -92,6 +88,14 @@ class TrustInterface:
         # Previous control state for detecting changes
         self.prev_control = None
         
+        # Behavior adjustment parameters
+        self.behavior_adjustment = {
+            'trust_level': 0.75,
+            'stability_factor': 1.0,
+            'smoothness_factor': 1.0,
+            'hesitation_factor': 1.0
+        }
+        
     def _calculate_speed_factor(self, current_speed):
         """Calculate intervention factor based on current speed"""
         if current_speed <= self.speed_threshold_low:
@@ -104,35 +108,6 @@ class TrustInterface:
             speed_ratio = (current_speed - self.speed_threshold_low) / speed_range
             return self.speed_factor_min + (self.speed_factor_max - self.speed_factor_min) * speed_ratio
         
-    def should_intervene(self, current_time, current_speed=0.0):
-        """Determine if an intervention should occur based on trust level and vehicle speed"""
-        # Check cooldown
-        if current_time - self.last_intervention_time < self.intervention_cooldown:
-            return False
-            
-        # Calculate speed-based intervention factor
-        speed_factor = self._calculate_speed_factor(current_speed)
-        
-        # Base probability from trust level, modified by speed factor
-        base_prob = (1 - self.trust_level) * self.self_intervention_facor
-        
-        # Adjust probability based on driving metrics
-        smoothness_factor = (2.0 - self.driving_metrics['acceleration_smoothness'] - 
-                            self.driving_metrics['braking_smoothness']) / 2.0
-        stability_factor = 1.0 - self.driving_metrics['steering_stability']
-        hesitation_factor = self.driving_metrics['hesitation_level']
-        
-        # Combine factors with appropriate weights
-        behavior_factor = 0.4 * smoothness_factor + 0.3 * stability_factor + 0.3 * hesitation_factor
-        
-        # Final intervention probability
-        intervention_prob = max(base_prob, speed_factor) + 0.2 * behavior_factor
-        
-        # Cap the final probability at 1.0
-        self.intervention_prob = min(1.0, intervention_prob)
-        
-        return random.random() < self.intervention_prob
-    
     def update_trust(self, intervention=False, intervention_type=None, dt=0.0):
         """
         Update trust level based on interventions, driving behavior, and smooth operation
@@ -143,34 +118,15 @@ class TrustInterface:
             dt: Time delta since last update
         """
         current_time = self.world.get_snapshot().timestamp.elapsed_seconds
+
+        smoothness_factor = (self.driving_metrics['acceleration_smoothness'] + 
+                                self.driving_metrics['braking_smoothness']) / 2.0
+        stability_factor = self.driving_metrics['steering_stability']
+        confidence_factor = 1.0 - self.driving_metrics['hesitation_level']
+        self.trust_level = 0.4 * smoothness_factor + 0.4 * stability_factor + 0.2 * confidence_factor
         
         if intervention:
-            # Decrease trust on intervention with different rates based on type
-            decrease_rates = {
-                'brake': self.trust_decrease_rate,
-                'steer': self.trust_decrease_rate * 0.7,  # Less impact than braking
-                'hesitation': self.trust_decrease_rate * 0.5  # Less impact than braking
-            }
-            
-            # Use default rate if type not specified
-            rate = decrease_rates.get(intervention_type, self.trust_decrease_rate)
-            self.trust_level = max(0.0, self.trust_level - rate)
-            
-            # Record intervention
             self.last_intervention_time = current_time
-        else:
-            # Calculate trust increase based on driving metrics
-            smoothness_factor = (self.driving_metrics['acceleration_smoothness'] + 
-                                self.driving_metrics['braking_smoothness']) / 2.0
-            stability_factor = self.driving_metrics['steering_stability']
-            confidence_factor = 1.0 - self.driving_metrics['hesitation_level']
-            
-            # Combine factors to adjust trust increase rate
-            behavior_multiplier = 0.4 * smoothness_factor + 0.3 * stability_factor + 0.3 * confidence_factor
-            
-            # Gradually increase trust during smooth operation, adjusted by behavior
-            adjusted_increase_rate = self.trust_increase_rate * behavior_multiplier
-            self.trust_level = min(1.0, self.trust_level + adjusted_increase_rate)
     
     def record_intervention(self, intervention_type='brake'):
         """
@@ -230,20 +186,20 @@ class TrustInterface:
         # 2. Calculate steering stability
         if len(self.steering_history) > 1:
             steering_variance = np.var(self.steering_history)
-            self.driving_metrics['steering_stability'] = max(0.0, min(1.0, 1.0 - steering_variance * 5.0))
+            self.driving_metrics['steering_stability'] = max(0.0, min(1.0, 1.0 - steering_variance * 10.0))
         
         # 3. Calculate acceleration smoothness
         if len(self.acceleration_history) > 1:
             # Detect abrupt acceleration
             if acceleration > self.abrupt_acceleration_threshold:
-                self.driving_metrics['acceleration_smoothness'] = max(0.0, self.driving_metrics['acceleration_smoothness'] - 0.2)
+                self.driving_metrics['acceleration_smoothness'] = max(0.0, self.driving_metrics['acceleration_smoothness'] - 0.1)
             else:
                 # Gradually recover smoothness
                 self.driving_metrics['acceleration_smoothness'] = min(1.0, self.driving_metrics['acceleration_smoothness'] + 0.02)
         
         # 4. Calculate braking smoothness
         if acceleration < self.abrupt_braking_threshold:
-            self.driving_metrics['braking_smoothness'] = max(0.0, self.driving_metrics['braking_smoothness'] - 0.2)
+            self.driving_metrics['braking_smoothness'] = max(0.0, self.driving_metrics['braking_smoothness'] - 0.1)
         else:
             # Gradually recover smoothness
             self.driving_metrics['braking_smoothness'] = min(1.0, self.driving_metrics['braking_smoothness'] + 0.02)
@@ -253,7 +209,7 @@ class TrustInterface:
             if self.hesitation_start_time is None:
                 self.hesitation_start_time = current_time
             elif current_time - self.hesitation_start_time > self.hesitation_threshold:
-                self.driving_metrics['hesitation_level'] = min(1.0, self.driving_metrics['hesitation_level'] + 0.2)
+                self.driving_metrics['hesitation_level'] = min(1.0, self.driving_metrics['hesitation_level'] + 0.1)
                 self.hesitation_start_time = None  # Reset after recording
         else:
             self.hesitation_start_time = None
@@ -320,7 +276,103 @@ class TrustInterface:
                 if self.intervention_timestamps else float('inf'),
             'driving_metrics': self.driving_metrics
         }
+    
+    def save_session_data(self):
+        """Save the trust feedback data for the session"""
+        data = {
+            'session_id': self.session_id,
+            'manual_interventions': self.manual_interventions,
+            'final_trust_level': self.trust_level,
+            'intervention_count': len(self.manual_interventions),
+            'intervention_types': {
+                'brake': len(self.intervention_types['brake']),
+                'steer': len(self.intervention_types['steer']),
+                'hesitation': len(self.intervention_types['hesitation'])
+            },
+            'final_driving_metrics': self.driving_metrics
+        }
         
+        filename = os.path.join(self.data_dir, f"trust_data_{self.session_id}.json")
+        with open(filename, 'w') as f:
+            json.dump(data, f, indent=4)
+    
+    def cleanup(self):
+        """Clean up pygame resources"""
+        self.save_session_data()
+        pygame.quit()
+
+
+    def detect_interventions_and_update_trust(self, current_control, prev_control, world_snapshot=None, dt=0.0):
+        """
+        Detect manual interventions based on control changes and update trust accordingly.
+        
+        Args:
+            current_control: Current vehicle control
+            prev_control: Previous vehicle control
+            world_snapshot: CARLA world snapshot for timestamp
+            dt: Time delta since last update
+            
+        Returns:
+            intervention_detected: Whether an intervention was detected
+        """
+        if prev_control is None:
+            return False
+            
+        # Check if an intervention is already active
+        if self.intervention_active:
+            # An intervention was already recorded
+            self.update_trust(intervention=True, intervention_type=self.intervention_type, dt=dt)
+            
+            # Reset intervention flag after processing
+            self.intervention_active = False
+            self.intervention_type = None
+            return True
+        else:
+            self.update_trust(intervention=False, dt=dt)
+            return False 
+
+    def reset(self):
+        """Reset the trust interface to initial state"""
+        self.trust_level = 0.75
+        self.driving_metrics = {
+            'steering_stability': 1.0,  # 0.0 (unstable) to 1.0 (stable)
+            'acceleration_smoothness': 1.0,  # 0.0 (jerky) to 1.0 (smooth)
+            'braking_smoothness': 1.0,  # 0.0 (abrupt) to 1.0 (smooth)
+            'hesitation_level': 0.0,    # 0.0 (confident) to 1.0 (hesitant)
+        }
+        self.behavior_adjustment = {
+            'trust_level': 0.75,
+            'stability_factor': 1.0,
+            'smoothness_factor': 1.0,
+            'hesitation_factor': 1.0
+        }
+        
+
+    def update_behavior_adjustment(self):
+        """Update behavior adjustment parameters based on trust level and driving metrics"""
+        # Get current trust level
+        trust_level = self.trust_level
+        
+        # Get relevant metrics
+        stability_factor = self.driving_metrics['steering_stability']
+        smoothness_factor = (self.driving_metrics['acceleration_smoothness'] + 
+                           self.driving_metrics['braking_smoothness']) / 2.0
+        hesitation_factor = 1.0 - self.driving_metrics['hesitation_level']
+        
+        # Store these for potential use in action modification
+        self.behavior_adjustment = {
+            'trust_level': trust_level,
+            'stability_factor': stability_factor,
+            'smoothness_factor': smoothness_factor,
+            'hesitation_factor': hesitation_factor
+        }
+        
+        return self.behavior_adjustment
+        
+    def get_behavior_adjustment(self):
+        """Get the current behavior adjustment parameters"""
+        return self.behavior_adjustment 
+
     def update_display(self):
         """Update the trust feedback display with enhanced metrics"""
         self.screen.fill(self.WHITE)
@@ -378,8 +430,7 @@ class TrustInterface:
             metrics['steering_stability'],
             metrics['acceleration_smoothness'],
             metrics['braking_smoothness'],
-            1.0 - metrics['hesitation_level'],
-            1.0 - metrics['disengagement_frequency']
+            1.0 - metrics['hesitation_level']
         ]
         
         metric_colors = [
@@ -410,57 +461,3 @@ class TrustInterface:
             self.screen.blit(text_surface, (x + 410, y + i * 25))
         
         pygame.display.flip()
-    
-    def save_session_data(self):
-        """Save the trust feedback data for the session"""
-        data = {
-            'session_id': self.session_id,
-            'manual_interventions': self.manual_interventions,
-            'final_trust_level': self.trust_level,
-            'intervention_count': len(self.manual_interventions),
-            'intervention_types': {
-                'brake': len(self.intervention_types['brake']),
-                'steer': len(self.intervention_types['steer']),
-                'hesitation': len(self.intervention_types['hesitation'])
-            },
-            'final_driving_metrics': self.driving_metrics
-        }
-        
-        filename = os.path.join(self.data_dir, f"trust_data_{self.session_id}.json")
-        with open(filename, 'w') as f:
-            json.dump(data, f, indent=4)
-    
-    def cleanup(self):
-        """Clean up pygame resources"""
-        self.save_session_data()
-        pygame.quit()
-
-
-    def detect_interventions_and_update_trust(self, current_control, prev_control, world_snapshot=None, dt=0.0):
-        """
-        Detect manual interventions based on control changes and update trust accordingly.
-        
-        Args:
-            current_control: Current vehicle control
-            prev_control: Previous vehicle control
-            world_snapshot: CARLA world snapshot for timestamp
-            dt: Time delta since last update
-            
-        Returns:
-            intervention_detected: Whether an intervention was detected
-        """
-        if prev_control is None:
-            return False
-            
-        # Check if an intervention is already active
-        if self.intervention_active:
-            # An intervention was already recorded
-            self.update_trust(intervention=True, intervention_type=self.intervention_type, dt=dt)
-            
-            # Reset intervention flag after processing
-            self.intervention_active = False
-            self.intervention_type = None
-            return True
-        else:
-            self.update_trust(intervention=False, dt=dt)
-            return False 

@@ -26,7 +26,10 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/scripts/manual_scenario_test.py",
-            "args": ["--scenario=urban_traffic"],
+            "args": [
+                "--scenario=urban_traffic",
+                "--start-carla",
+            ],
             "console": "integratedTerminal",
             "justMyCode": true
         },

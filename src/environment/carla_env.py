@@ -11,6 +11,7 @@ from ..mdp.rewards import calculate_reward
 from ..utils.viz_utils import render_trust_visualization, render_waypoints_on_camera
 from ..utils.sensors import SensorManager
 from ..utils.termination_manager import TerminationManager
+from ..trust.trust_interface import TrustInterface
 
 class CarlaEnv(gym.Env):
     """Custom Carla environment that follows gymnasium interface"""
@@ -31,7 +32,7 @@ class CarlaEnv(gym.Env):
         self.active_scenario = None
         
         # Trust-related attributes
-        self.trust_interface = trust_interface
+        self.trust_interface: TrustInterface = trust_interface
         self.last_step_time = None
         self.current_intervention_prob = 0.0  # Probability of intervention in current step
         
@@ -47,14 +48,6 @@ class CarlaEnv(gym.Env):
         # Previous control state for detecting changes
         self.prev_control = None
         
-        # Behavior adjustment parameters
-        self.behavior_adjustment = {
-            'trust_level': 0.75,
-            'stability_factor': 1.0,
-            'smoothness_factor': 1.0,
-            'hesitation_factor': 1.0
-        }
-        
         # Initialize sensor manager (will be properly set up when vehicle is spawned)
         self.sensor_manager = None
         self.render_mode = render_mode
@@ -68,7 +61,7 @@ class CarlaEnv(gym.Env):
         # Trust visualization
         self.trust_history = []
         self.max_trust_history = 100  # Number of trust values to keep in history
-        self.trust_viz_height = 220  # Increased from 120 to 180 for more space
+        self.trust_viz_height = 280  # Increased from 220 to accommodate more information
         
         # Reward visualization
         self.reward_history = []
@@ -180,12 +173,10 @@ class CarlaEnv(gym.Env):
         
         # Check for decision points (intersections, lane merges, etc.)
         self.is_near_decision_point = check_decision_points(self.vehicle, self.world, self.decision_point_distance)
-        
+        self.trust_interface.set_near_decision_point(self.is_near_decision_point)
+
         # Update driving metrics in trust interface
         self.trust_interface.update_driving_metrics(self.vehicle)
-        
-        # Set decision point status in trust interface
-        self.trust_interface.set_near_decision_point(self.is_near_decision_point)
         
         # Calculate time delta since last step
         current_time = self.world.get_snapshot().timestamp.elapsed_seconds
@@ -200,8 +191,9 @@ class CarlaEnv(gym.Env):
             dt=dt
         )
         
-        # Update trust-based behavior parameters
-        self._update_trust_based_behavior()
+        # Update trust-based behavior parameters in trust interface
+        self._update_target_speed()
+        self.trust_interface.update_behavior_adjustment()
         
         # Update trust history for visualization
         if len(self.trust_history) >= self.max_trust_history:
@@ -256,7 +248,7 @@ class CarlaEnv(gym.Env):
             'step_count': self.step_count,
             'driving_metrics': self.trust_interface.driving_metrics if self.trust_interface else {},
             'is_near_decision_point': self.is_near_decision_point,
-            'behavior_adjustment': self.behavior_adjustment,
+            'behavior_adjustment': self.trust_interface.behavior_adjustment,
             'intervention_probability': self.current_intervention_prob,
             'intervention_active': self.trust_interface.intervention_active
         }
@@ -305,25 +297,13 @@ class CarlaEnv(gym.Env):
         self.prev_control = None
         self.current_intervention_prob = 0.0
         self.last_step_time = None
-        
-        # Reset behavior adjustment
-        self.behavior_adjustment = {
-            'trust_level': 0.75,
-            'stability_factor': 1.0,
-            'smoothness_factor': 1.0,
-            'hesitation_factor': 1.0
-        }
+        self.trust_interface.reset()
         
         # Reset termination manager
         self.termination_manager.reset()
             
         # Destroy existing vehicle if any
         if hasattr(self, 'vehicle') and self.vehicle is not None:
-            # Clean up sensors
-            if self.sensor_manager:
-                self.sensor_manager.cleanup_sensors()
-            
-            # Then destroy vehicle
             if self.vehicle.is_alive:
                 self.vehicle.destroy()
             self.vehicle = None
@@ -333,6 +313,7 @@ class CarlaEnv(gym.Env):
         
         # Setup sensor manager with the new vehicle
         if self.sensor_manager:
+            self.sensor_manager.reset()
             self.sensor_manager.set_vehicle(self.vehicle)
         else:
             self.sensor_manager = SensorManager(self.world, self.vehicle, self.render_mode)
@@ -362,121 +343,84 @@ class CarlaEnv(gym.Env):
         
         return obs, info
     
-    def _update_trust_based_behavior(self):
+    def _update_target_speed(self):
         """Update vehicle behavior parameters based on trust level and driving metrics"""
         # Get current trust level
         trust_level = self.trust_interface.trust_level
         
-        # 1. Update target speed (as before)
+        # 1. Update target speed based on trust level
         self.target_speed = self.min_target_speed + (self.base_target_speed - self.min_target_speed) * trust_level
-        
-        # 2. Calculate behavior adjustment factors based on trust and driving metrics
-        if hasattr(self.trust_interface, 'driving_metrics'):
-            # Get relevant metrics
-            stability_factor = self.trust_interface.driving_metrics['steering_stability']
-            smoothness_factor = (self.trust_interface.driving_metrics['acceleration_smoothness'] + 
-                                self.trust_interface.driving_metrics['braking_smoothness']) / 2.0
-            hesitation_factor = 1.0 - self.trust_interface.driving_metrics['hesitation_level']
-            
-            # Store these for potential use in action modification
-            self.behavior_adjustment = {
-                'trust_level': trust_level,
-                'stability_factor': stability_factor,
-                'smoothness_factor': smoothness_factor,
-                'hesitation_factor': hesitation_factor
-            }
-        else:
-            # Default values if metrics not available
-            self.behavior_adjustment = {
-                'trust_level': trust_level,
-                'stability_factor': 1.0,
-                'smoothness_factor': 1.0,
-                'hesitation_factor': 1.0
-            }
     
     def _adjust_action_based_on_trust(self, action):
-        """Adjust the agent's action based on trust level and driving behavior metrics
-        
-        This method modifies the agent's actions to reflect how a human driver's behavior
-        would change based on their trust level and driving style. Adjustments are applied
-        probabilistically to simulate realistic human intervention patterns.
-        
-        Args:
-            action: Original action from the agent [steering, throttle/brake]
-            
-        Returns:
-            adjusted_action: Modified action based on trust and behavior, or original action if no adjustment
-        """
+        """Adjust the agent's action based on trust level and driving behavior metrics"""
         # Make a copy of the original action
         adjusted_action = np.array(action, dtype=np.float32)
         
-        # Calculate probability of intervention based on trust level and driving metrics
-        trust_level = self.behavior_adjustment['trust_level']
+        # Get behavior adjustment from trust interface
+        behavior = self.trust_interface.get_behavior_adjustment()
+        trust_level = behavior['trust_level']
+        stability_factor = behavior['stability_factor']
+        smoothness_factor = behavior['smoothness_factor']
+        hesitation_factor = behavior['hesitation_factor']
         
         # Base intervention probability - higher when trust is lower
         base_intervention_prob = (1.0 - trust_level) * 0.2  # Range: 0.0 to 0.2
+
+        # Higher probability near decision points
+        decision_point_factor = 0.04 if self.is_near_decision_point else 0.0
         
-        # Adjust based on driving metrics
-        if hasattr(self.trust_interface, 'driving_metrics'):
-            stability_factor = self.behavior_adjustment['stability_factor']
-            smoothness_factor = self.behavior_adjustment['smoothness_factor']
-            hesitation_factor = self.behavior_adjustment['hesitation_factor']
-            
-            # Increase probability when driving metrics are poor
-            metrics_factor = (3.0 - stability_factor - smoothness_factor - hesitation_factor) / 3.0
-            metrics_intervention_prob = metrics_factor * 0.15  # Range: 0.0 to 0.15
-            
-            # Higher probability near decision points
-            decision_point_factor = 0.1 if self.is_near_decision_point else 0.0
-            
-            # Combine probabilities
-            intervention_prob = base_intervention_prob + metrics_intervention_prob + decision_point_factor
-            
-            # Cap at reasonable maximum
-            intervention_prob = min(0.5, intervention_prob)  # Max 50% chance per step
-        else:
-            # Simplified probability if metrics not available
-            intervention_prob = base_intervention_prob
+        # Combine probabilities
+        intervention_prob = base_intervention_prob + decision_point_factor
+        
+        # Cap at reasonable maximum
+        intervention_prob = min(0.5, intervention_prob)  # Max 50% chance per step
         
         # Store the current intervention probability for debugging/visualization
         self.current_intervention_prob = intervention_prob
+        self.trust_interface.current_intervention_prob = intervention_prob
         
         # Decide whether to intervene this step
         if np.random.random() > intervention_prob:
             # No intervention this step - return original action unchanged
             return adjusted_action
-            
-        # If we reach here, we're applying an intervention
+
+        # randomly choose intervention type to apply accprding to the facotrs
+        intervention_probabilities= [1 - stability_factor, 1 - smoothness_factor, hesitation_factor]
+        # Normalize probabilities
+        intervention_probabilities = np.array(intervention_probabilities) / (np.sum(intervention_probabilities) + 1e-6)
+        intervention_probabilities[-1] = 1 - np.sum(intervention_probabilities[:-1])
+        intervention_type = np.random.choice(
+            ['steer', 'throttle_or_brake', 'hesitation'], 
+            p=intervention_probabilities
+        )
         
-        # Extract behavior factors
-        stability_factor = self.behavior_adjustment['stability_factor']
-        smoothness_factor = self.behavior_adjustment['smoothness_factor']
+        if intervention_type == 'steer':
+            # 1. Adjust steering based on stability
+            # Low stability -> more conservative steering (reduced magnitude)
+            steering_adjustment = 0.5 + 0.5 * stability_factor  # Range: 0.5 to 1.0
+            adjusted_action[0] *= steering_adjustment
         
-        # 1. Adjust steering based on stability
-        # Low stability -> more conservative steering (reduced magnitude)
-        steering_adjustment = 0.5 + 0.5 * stability_factor  # Range: 0.5 to 1.0
-        adjusted_action[0] *= steering_adjustment
-        self.trust_interface.record_intervention('steer')
+        elif intervention_type == 'throttle_or_brake':
+            # 2. Adjust throttle/brake based on trust and smoothness
+            # Low trust or smoothness -> more gentle acceleration, stronger braking
+            if adjusted_action[1] > 0:  # Throttle
+                # Low trust or smoothness -> reduce throttle
+                throttle_adjustment = 0.3 + 0.7 * (trust_level * smoothness_factor)  # Range: 0.3 to 1.0
+                adjusted_action[1] *= throttle_adjustment
+                intervention_type = 'throttle'
+            else:  # Brake
+                # Low trust -> increase braking force
+                brake_adjustment = 1.0 + (1.0 - trust_level) * 0.5  # Range: 1.0 to 1.5
+                adjusted_action[1] *= brake_adjustment
+                intervention_type = 'brake'
+        elif intervention_type == 'hesitation':
+            # 3. Add hesitation effect (random small delays or reduced actions) 
+            if hesitation_factor > 0.3 and np.random.random() < hesitation_factor * 0.5:
+                # Occasionally reduce action magnitude to simulate hesitation
+                hesitation_reduction = 1.0 - (hesitation_factor * 0.5)  # Range: 0.85 to 0.5
+                adjusted_action *= hesitation_reduction
         
-        # 2. Adjust throttle/brake based on trust and smoothness
-        # Low trust or smoothness -> more gentle acceleration, stronger braking
-        if adjusted_action[1] > 0:  # Throttle
-            # Low trust or smoothness -> reduce throttle
-            throttle_adjustment = 0.3 + 0.7 * (trust_level * smoothness_factor)  # Range: 0.3 to 1.0
-            adjusted_action[1] *= throttle_adjustment
-        else:  # Brake
-            # Low trust -> increase braking force
-            brake_adjustment = 1.0 + (1.0 - trust_level) * 0.5  # Range: 1.0 to 1.5
-            adjusted_action[1] *= brake_adjustment
-        self.trust_interface.record_intervention('brake')
-        
-        # 3. Add hesitation effect (random small delays or reduced actions)
-        hesitation_factor = 1.0 - self.behavior_adjustment['hesitation_factor']
-        if hesitation_factor > 0.3 and np.random.random() < hesitation_factor * 0.5:
-            # Occasionally reduce action magnitude to simulate hesitation
-            hesitation_reduction = 1.0 - (hesitation_factor * 0.5)  # Range: 0.85 to 0.5
-            adjusted_action *= hesitation_reduction
-        self.trust_interface.record_intervention('hesitation')
+        self.trust_interface.record_intervention(intervention_type)
         return adjusted_action
     
     def close(self):
@@ -546,7 +490,8 @@ class CarlaEnv(gym.Env):
                         self.trust_viz_height, 
                         self.reward_components, 
                         self.trust_history, 
-                        self.max_trust_history
+                        self.max_trust_history,
+                        self.target_speed
                     )
                 
                 # Render radar visualization

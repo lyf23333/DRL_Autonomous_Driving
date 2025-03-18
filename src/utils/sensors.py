@@ -24,20 +24,21 @@ class SensorManager:
         
         # Sensor storage
         self.sensors = {}
+        self.collision_data = []
+        self.collision_detected = False
+        self.radar_points = []
+        self.camera_image = None
+        
+        # Collision detection parameters
+        self.collision_intensity_threshold = 400.0  # Higher threshold to avoid false positives
         
         # Camera settings
         self.camera_width = 800
         self.camera_height = 600
-        self.camera_image = None
         
         # Radar settings
         self.radar_max_distance = 20.0  # Maximum distance for radar observations (meters)
-        self.radar_points = []  # Store current radar points
         self.radar_points_history = {}  # Store history for temporal filtering
-        
-        # Collision data
-        self.collision_detected = False
-        self.collision_impulse = np.zeros(3, dtype=np.float32)
         
         # Setup sensors if vehicle is available
         if self.vehicle is not None:
@@ -49,7 +50,7 @@ class SensorManager:
             return
             
         # Clean up existing sensors if any
-        self.cleanup_sensors()
+        self._cleanup_sensors()
         
         blueprint_library = self.world.get_blueprint_library()
         
@@ -130,15 +131,27 @@ class SensorManager:
             camera.listen(lambda image: self._process_camera_data(image))
     
     def _process_collision(self, event):
-        """Process collision events"""
-        # Get the impulse from the collision
-        impulse = event.normal_impulse
-        intensity = math.sqrt(impulse.x**2 + impulse.y**2 + impulse.z**2)
+        """Process collision data
         
-        # Only register significant collisions
-        if intensity > 0.5:  # Threshold to filter out minor collisions
+        Args:
+            event: CARLA collision event
+        """
+        # Get collision intensity as the magnitude of the impulse
+        intensity = math.sqrt(event.normal_impulse.x**2 + 
+                             event.normal_impulse.y**2 + 
+                             event.normal_impulse.z**2)
+        
+        # Only record significant collisions
+        if intensity > self.collision_intensity_threshold:
+            print(f"Collision detected with intensity {intensity}")
+            self.collision_data.append({
+                'frame': event.frame,
+                'intensity': intensity,
+                'actor_id': event.other_actor.id if event.other_actor else None
+            })
             self.collision_detected = True
-            self.collision_impulse = np.array([impulse.x, impulse.y, impulse.z], dtype=np.float32)
+        else:
+            print(f"Minor collision ignored with intensity {intensity}")
     
     def _process_camera_data(self, image):
         """Process camera data from sensor"""
@@ -261,7 +274,10 @@ class SensorManager:
         # Clean up old history entries (not seen recently)
         current_frame = self.world.get_snapshot().frame
         keys_to_remove = []
-        for key, history in self.radar_points_history.items():
+        
+        # Use a copy of the dictionary keys to avoid the "dictionary changed size during iteration" error
+        for key in list(self.radar_points_history.keys()):
+            history = self.radar_points_history[key]
             if current_frame - history['last_seen'] > 10:  # Not seen for 10 frames
                 keys_to_remove.append(key)
         
@@ -429,14 +445,13 @@ class SensorManager:
         return array
     
     def reset(self):
-        """Reset sensor data"""
+        """Reset the sensor data"""
+        self.collision_data = []
         self.collision_detected = False
-        self.collision_impulse = np.zeros(3, dtype=np.float32)
         self.radar_points = []
-        self.radar_points_history = {}
         self.camera_image = None
     
-    def cleanup_sensors(self):
+    def _cleanup_sensors(self):
         """Clean up all sensors"""
         for sensor in self.sensors.values():
             if sensor and sensor.is_alive:
