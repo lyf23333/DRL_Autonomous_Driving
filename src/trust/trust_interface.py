@@ -186,7 +186,7 @@ class TrustInterface:
         # 2. Calculate steering stability
         if len(self.steering_history) > 1:
             steering_variance = np.var(self.steering_history)
-            self.driving_metrics['steering_stability'] = max(0.0, min(1.0, 1.0 - steering_variance * 5.0))
+            self.driving_metrics['steering_stability'] = max(0.0, min(1.0, 1.0 - steering_variance * 10.0))
         
         # 3. Calculate acceleration smoothness
         if len(self.acceleration_history) > 1:
