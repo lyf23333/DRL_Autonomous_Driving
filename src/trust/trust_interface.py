@@ -28,7 +28,7 @@ class TrustInterface:
         # Trust metrics
         self.trust_level = 0.75  # Range: 0.0 to 1.0
         self.trust_increase_rate = 0.01  # Rate of trust increase during smooth operation
-        self.trust_decrease_rate = 0.05  # Rate of trust decrease on intervention
+        self.trust_decrease_rate = 0.1  # Rate of trust decrease on intervention
         self.intervention_active = False
         
         # Speed-based intervention parameters
@@ -71,7 +71,7 @@ class TrustInterface:
         self.abrupt_braking_threshold = -4.0      # m/s²
         self.hesitation_threshold = 1.5           # seconds of low speed near decision points
         
-        self.intervention_prob = 0.0
+        self.current_intervention_prob = 0.0
         
         # Setup data logging
         self.data_dir = "data/trust_feedback"
@@ -118,34 +118,15 @@ class TrustInterface:
             dt: Time delta since last update
         """
         current_time = self.world.get_snapshot().timestamp.elapsed_seconds
+
+        smoothness_factor = (self.driving_metrics['acceleration_smoothness'] + 
+                                self.driving_metrics['braking_smoothness']) / 2.0
+        stability_factor = self.driving_metrics['steering_stability']
+        confidence_factor = 1.0 - self.driving_metrics['hesitation_level']
+        self.trust_level = 0.4 * smoothness_factor + 0.4 * stability_factor + 0.2 * confidence_factor
         
         if intervention:
-            # Decrease trust on intervention with different rates based on type
-            decrease_rates = {
-                'brake': self.trust_decrease_rate,
-                'steer': self.trust_decrease_rate * 0.7,  # Less impact than braking
-                'hesitation': self.trust_decrease_rate * 0.5  # Less impact than braking
-            }
-            
-            # Use default rate if type not specified
-            rate = decrease_rates.get(intervention_type, self.trust_decrease_rate)
-            self.trust_level = max(0.0, self.trust_level - rate)
-            
-            # Record intervention
             self.last_intervention_time = current_time
-        else:
-            # Calculate trust increase based on driving metrics
-            smoothness_factor = (self.driving_metrics['acceleration_smoothness'] + 
-                                self.driving_metrics['braking_smoothness']) / 2.0
-            stability_factor = self.driving_metrics['steering_stability']
-            confidence_factor = 1.0 - self.driving_metrics['hesitation_level']
-            
-            # Combine factors to adjust trust increase rate
-            behavior_multiplier = 0.4 * smoothness_factor + 0.3 * stability_factor + 0.3 * confidence_factor
-            
-            # Gradually increase trust during smooth operation, adjusted by behavior
-            adjusted_increase_rate = self.trust_increase_rate * behavior_multiplier
-            self.trust_level = min(1.0, self.trust_level + adjusted_increase_rate)
     
     def record_intervention(self, intervention_type='brake'):
         """
@@ -211,14 +192,14 @@ class TrustInterface:
         if len(self.acceleration_history) > 1:
             # Detect abrupt acceleration
             if acceleration > self.abrupt_acceleration_threshold:
-                self.driving_metrics['acceleration_smoothness'] = max(0.0, self.driving_metrics['acceleration_smoothness'] - 0.05)
+                self.driving_metrics['acceleration_smoothness'] = max(0.0, self.driving_metrics['acceleration_smoothness'] - 0.1)
             else:
                 # Gradually recover smoothness
                 self.driving_metrics['acceleration_smoothness'] = min(1.0, self.driving_metrics['acceleration_smoothness'] + 0.02)
         
         # 4. Calculate braking smoothness
         if acceleration < self.abrupt_braking_threshold:
-            self.driving_metrics['braking_smoothness'] = max(0.0, self.driving_metrics['braking_smoothness'] - 0.05)
+            self.driving_metrics['braking_smoothness'] = max(0.0, self.driving_metrics['braking_smoothness'] - 0.1)
         else:
             # Gradually recover smoothness
             self.driving_metrics['braking_smoothness'] = min(1.0, self.driving_metrics['braking_smoothness'] + 0.02)
@@ -228,7 +209,7 @@ class TrustInterface:
             if self.hesitation_start_time is None:
                 self.hesitation_start_time = current_time
             elif current_time - self.hesitation_start_time > self.hesitation_threshold:
-                self.driving_metrics['hesitation_level'] = min(1.0, self.driving_metrics['hesitation_level'] + 0.05)
+                self.driving_metrics['hesitation_level'] = min(1.0, self.driving_metrics['hesitation_level'] + 0.1)
                 self.hesitation_start_time = None  # Reset after recording
         else:
             self.hesitation_start_time = None

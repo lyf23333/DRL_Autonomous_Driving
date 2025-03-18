@@ -14,10 +14,18 @@ def render_trust_visualization(screen, font, trust_interface, vehicle, camera_wi
         trust_text = font.render(f"Trust: {trust_interface.trust_level:.2f}", True, (255, 255, 255))
         screen.blit(trust_text, (10, camera_height + 10))
         
-        # Indicate if intervention is active
-        if trust_interface.intervention_active:
+        # Indicate if intervention is active and show intervention probability
+        if hasattr(trust_interface, 'intervention_active') and trust_interface.intervention_active:
             intervention_text = font.render("INTERVENTION", True, (255, 0, 0))
             screen.blit(intervention_text, (250, camera_height + 10))
+            
+        # Add intervention probability
+        if hasattr(trust_interface, 'current_intervention_prob'):
+            prob_value = trust_interface.current_intervention_prob
+            # Color changes from green (low) to red (high probability)
+            prob_color = (int(min(255, prob_value * 510)), int(max(0, 255 - prob_value * 510)), 0)
+            prob_text = font.render(f"Interv. Prob: {prob_value:.2f}", True, prob_color)
+            screen.blit(prob_text, (550, camera_height + 10))
     
     # Display current speed
     if vehicle:
@@ -30,7 +38,7 @@ def render_trust_visualization(screen, font, trust_interface, vehicle, camera_wi
         
         # Add target speed in a separate section with a different color
         target_text = font.render(f"Target: {target_speed:.1f} km/h", True, (255, 200, 0))  # Yellow color
-        screen.blit(target_text, (350, camera_height + 10))
+        screen.blit(target_text, (400, camera_height + 10))
     
     # Draw a separator line
     pygame.draw.line(

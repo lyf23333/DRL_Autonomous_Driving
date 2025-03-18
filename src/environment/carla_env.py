@@ -359,95 +359,68 @@ class CarlaEnv(gym.Env):
         # Get behavior adjustment from trust interface
         behavior = self.trust_interface.get_behavior_adjustment()
         trust_level = behavior['trust_level']
-        
-        # Base intervention probability - higher when trust is lower
-        base_intervention_prob = (1.0 - trust_level) * 0.2  # Range: 0.0 to 0.2
-        
-        # Adjust based on driving metrics
         stability_factor = behavior['stability_factor']
         smoothness_factor = behavior['smoothness_factor']
         hesitation_factor = behavior['hesitation_factor']
         
-        # Increase probability when driving metrics are poor
-        metrics_factor = (3.0 - stability_factor - smoothness_factor - hesitation_factor) / 3.0
-        metrics_intervention_prob = metrics_factor * 0.15  # Range: 0.0 to 0.15
-        
+        # Base intervention probability - higher when trust is lower
+        base_intervention_prob = (1.0 - trust_level) * 0.2  # Range: 0.0 to 0.2
+
         # Higher probability near decision points
-        decision_point_factor = 0.1 if self.is_near_decision_point else 0.0
+        decision_point_factor = 0.04 if self.is_near_decision_point else 0.0
         
         # Combine probabilities
-        intervention_prob = base_intervention_prob + metrics_intervention_prob + decision_point_factor
+        intervention_prob = base_intervention_prob + decision_point_factor
         
         # Cap at reasonable maximum
         intervention_prob = min(0.5, intervention_prob)  # Max 50% chance per step
         
         # Store the current intervention probability for debugging/visualization
         self.current_intervention_prob = intervention_prob
+        self.trust_interface.current_intervention_prob = intervention_prob
         
         # Decide whether to intervene this step
         if np.random.random() > intervention_prob:
             # No intervention this step - return original action unchanged
             return adjusted_action
-            
-        # If we reach here, we're applying an intervention
+
+        # randomly choose intervention type to apply accprding to the facotrs
+        intervention_probabilities= [1 - stability_factor, 1 - smoothness_factor, hesitation_factor]
+        # Normalize probabilities
+        intervention_probabilities = np.array(intervention_probabilities) / (np.sum(intervention_probabilities) + 1e-6)
+        intervention_probabilities[-1] = 1 - np.sum(intervention_probabilities[:-1])
+        intervention_type = np.random.choice(
+            ['steer', 'throttle_or_brake', 'hesitation'], 
+            p=intervention_probabilities
+        )
         
-        # Track which component changed the most to determine intervention type
-        original_action = np.array(action, dtype=np.float32)
-        intervention_type = None
-        max_change = 0.0
+        if intervention_type == 'steer':
+            # 1. Adjust steering based on stability
+            # Low stability -> more conservative steering (reduced magnitude)
+            steering_adjustment = 0.5 + 0.5 * stability_factor  # Range: 0.5 to 1.0
+            adjusted_action[0] *= steering_adjustment
         
-        # 1. Adjust steering based on stability
-        # Low stability -> more conservative steering (reduced magnitude)
-        steering_adjustment = 0.5 + 0.5 * stability_factor  # Range: 0.5 to 1.0
-        adjusted_action[0] *= steering_adjustment
-        
-        # Check if steering changed significantly
-        steering_change = abs(adjusted_action[0] - original_action[0])
-        if steering_change > max_change:
-            max_change = steering_change
-            intervention_type = 'steer'
-        
-        # 2. Adjust throttle/brake based on trust and smoothness
-        # Low trust or smoothness -> more gentle acceleration, stronger braking
-        if adjusted_action[1] > 0:  # Throttle
-            # Low trust or smoothness -> reduce throttle
-            throttle_adjustment = 0.3 + 0.7 * (trust_level * smoothness_factor)  # Range: 0.3 to 1.0
-            adjusted_action[1] *= throttle_adjustment
-            
-            # Check if throttle changed significantly
-            throttle_change = abs(adjusted_action[1] - original_action[1])
-            if throttle_change > max_change:
-                max_change = throttle_change
+        elif intervention_type == 'throttle_or_brake':
+            # 2. Adjust throttle/brake based on trust and smoothness
+            # Low trust or smoothness -> more gentle acceleration, stronger braking
+            if adjusted_action[1] > 0:  # Throttle
+                # Low trust or smoothness -> reduce throttle
+                throttle_adjustment = 0.3 + 0.7 * (trust_level * smoothness_factor)  # Range: 0.3 to 1.0
+                adjusted_action[1] *= throttle_adjustment
                 intervention_type = 'throttle'
-        else:  # Brake
-            # Low trust -> increase braking force
-            brake_adjustment = 1.0 + (1.0 - trust_level) * 0.5  # Range: 1.0 to 1.5
-            adjusted_action[1] *= brake_adjustment
-            
-            # Check if brake changed significantly
-            brake_change = abs(adjusted_action[1] - original_action[1])
-            if brake_change > max_change:
-                max_change = brake_change
+            else:  # Brake
+                # Low trust -> increase braking force
+                brake_adjustment = 1.0 + (1.0 - trust_level) * 0.5  # Range: 1.0 to 1.5
+                adjusted_action[1] *= brake_adjustment
                 intervention_type = 'brake'
+        elif intervention_type == 'hesitation':
+            # 3. Add hesitation effect (random small delays or reduced actions) 
+            if hesitation_factor > 0.3 and np.random.random() < hesitation_factor * 0.5:
+                # Occasionally reduce action magnitude to simulate hesitation
+                hesitation_reduction = 1.0 - (hesitation_factor * 0.5)  # Range: 0.85 to 0.5
+                adjusted_action *= hesitation_reduction
         
-        # 3. Add hesitation effect (random small delays or reduced actions)
-        hesitation_factor = 1.0 - hesitation_factor
-        if hesitation_factor > 0.3 and np.random.random() < hesitation_factor * 0.5:
-            # Occasionally reduce action magnitude to simulate hesitation
-            hesitation_reduction = 1.0 - (hesitation_factor * 0.5)  # Range: 0.85 to 0.5
-            adjusted_action *= hesitation_reduction
-            
-            # Check if hesitation caused significant change
-            hesitation_change = np.abs(adjusted_action - original_action).max()
-            if hesitation_change > max_change:
-                max_change = hesitation_change
-                intervention_type = 'hesitation'
-        
-        # Record that an intervention occurred this step if the change is significant
-        if max_change > 0.1:
-            self.trust_interface.intervention_active = True
-            self.trust_interface.intervention_type = intervention_type
-        
+        self.trust_interface.record_intervention(intervention_type)
         return adjusted_action
     
     def close(self):
