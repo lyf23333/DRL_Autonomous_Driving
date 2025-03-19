@@ -39,8 +39,8 @@ class ObservationManager:
         # Define the observation space
         self.observation_space = spaces.Dict({
             'vehicle_state': spaces.Box(
-                low=np.array([-np.inf] * (7 + 2 * self.num_observed_waypoints)),  # Added 1 for target speed
-                high=np.array([np.inf] * (7 + 2 * self.num_observed_waypoints)),
+                low=np.array([-np.inf] * (8 + 2 * self.num_observed_waypoints)),  # Added 1 for trust level
+                high=np.array([np.inf] * (8 + 2 * self.num_observed_waypoints)),
                 dtype=np.float32
             ),
             'location_history': spaces.Box(
@@ -95,8 +95,12 @@ class ObservationManager:
         Returns:
             obs: Observation dictionary
         """
-        # Get vehicle state observation
-        vehicle_state = self._get_vehicle_state(vehicle, waypoints, current_waypoint_idx, waypoint_threshold, target_speed)
+        # Get trust level
+        trust_level = trust_interface.trust_level if trust_interface else 0.75
+        
+        # Get vehicle state observation (now includes trust level)
+        vehicle_state = self._get_vehicle_state(vehicle, waypoints, current_waypoint_idx, 
+                                               waypoint_threshold, target_speed, trust_level)
         
         # Get location history
         location_history = self._get_location_history(vehicle)
@@ -121,7 +125,8 @@ class ObservationManager:
         
         return obs
     
-    def _get_vehicle_state(self, vehicle, waypoints, current_waypoint_idx, waypoint_threshold, target_speed=20.0):
+    def _get_vehicle_state(self, vehicle, waypoints, current_waypoint_idx, waypoint_threshold, 
+                          target_speed=20.0, trust_level=0.75):
         """Get vehicle state observation
         
         Args:
@@ -130,12 +135,13 @@ class ObservationManager:
             current_waypoint_idx: Index of the current waypoint
             waypoint_threshold: Distance threshold for waypoint completion
             target_speed: Current target speed in km/h
+            trust_level: Current trust level (0-1)
             
         Returns:
             numpy.ndarray: Vehicle state observation
         """
         if vehicle is None or not waypoints:
-            return np.zeros(7 + 2 * self.num_observed_waypoints, dtype=np.float32)  # Updated size
+            return np.zeros(8 + 2 * self.num_observed_waypoints, dtype=np.float32)  # Updated size for trust level
             
         velocity = vehicle.get_velocity()
         angular_velocity = vehicle.get_angular_velocity()
@@ -182,6 +188,7 @@ class ObservationManager:
             velocity.x, velocity.y, angular_velocity.z,
             acceleration.x, acceleration.y,
             normalized_target_speed,  # Add normalized target speed
+            trust_level,              # Add trust level
             *relative_waypoints.flatten()
         ], dtype=np.float32)
         
