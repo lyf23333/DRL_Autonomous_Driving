@@ -39,8 +39,8 @@ class ObservationManager:
         # Define the observation space
         self.observation_space = spaces.Dict({
             'vehicle_state': spaces.Box(
-                low=np.array([-np.inf] * (9 + 2 * self.num_observed_waypoints)),
-                high=np.array([np.inf] * (9 + 2 * self.num_observed_waypoints)),
+                low=np.array([-np.inf] * (6 + 2 * self.num_observed_waypoints)),
+                high=np.array([np.inf] * (6 + 2 * self.num_observed_waypoints)),
                 dtype=np.float32
             ),
             'location_history': spaces.Box(
@@ -133,7 +133,7 @@ class ObservationManager:
             numpy.ndarray: Vehicle state observation
         """
         if vehicle is None or not waypoints:
-            return np.zeros(9 + 2 * self.num_observed_waypoints, dtype=np.float32)
+            return np.zeros(6 + 2 * self.num_observed_waypoints, dtype=np.float32)
             
         velocity = vehicle.get_velocity()
         angular_velocity = vehicle.get_angular_velocity()
@@ -173,9 +173,9 @@ class ObservationManager:
 
         # Combine all vehicle state information
         vehicle_state = np.array([
-            velocity.x, velocity.y, velocity.z,
-            angular_velocity.x, angular_velocity.y, angular_velocity.z,
-            acceleration.x, acceleration.y, acceleration.z,
+            vehicle_transform.rotation.yaw / 360.0,
+            velocity.x, velocity.y, angular_velocity.z,
+            acceleration.x, acceleration.y,
             *relative_waypoints.flatten()
         ], dtype=np.float32)
         
