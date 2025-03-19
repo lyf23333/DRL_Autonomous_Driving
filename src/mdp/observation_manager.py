@@ -7,6 +7,7 @@ import numpy as np
 from gymnasium import spaces
 import carla
 import math
+from collections import deque
 
 class ObservationManager:
     """
@@ -23,12 +24,28 @@ class ObservationManager:
         """
         self.config = config
         self.sensor_manager = sensor_manager
-        self.num_observed_waypoints = 3
+        
+        # Set parameters from config
+        if config:
+            self.num_observed_waypoints = getattr(config, 'num_observed_waypoints', 3)
+            self.location_history_length = getattr(config, 'location_history_length', 10)
+        else:
+            self.num_observed_waypoints = 3
+            self.location_history_length = 10
+        
+        # Location history buffer setup
+        self.location_history = deque(maxlen=self.location_history_length)
+        
         # Define the observation space
         self.observation_space = spaces.Dict({
             'vehicle_state': spaces.Box(
                 low=np.array([-np.inf] * (9 + 2 * self.num_observed_waypoints)),
                 high=np.array([np.inf] * (9 + 2 * self.num_observed_waypoints)),
+                dtype=np.float32
+            ),
+            'location_history': spaces.Box(
+                low=np.array([-np.inf] * (2 * self.location_history_length)),
+                high=np.array([np.inf] * (2 * self.location_history_length)),
                 dtype=np.float32
             ),
             'recent_intervention': spaces.Discrete(2),  # Binary: 0 or 1
@@ -46,6 +63,21 @@ class ObservationManager:
             )
         })
     
+    def update(self, vehicle):
+        """
+        Update observation manager state based on current vehicle state.
+        This should be called every step before getting the observation.
+        
+        Args:
+            vehicle: CARLA vehicle object
+        """
+        if vehicle is None:
+            return
+            
+        # Update location history
+        location = vehicle.get_transform().location
+        self.location_history.append((location.x, location.y))
+    
     def get_observation(self, vehicle, waypoints, current_waypoint_idx, waypoint_threshold, 
                        trust_interface, active_scenario):
         """
@@ -58,13 +90,15 @@ class ObservationManager:
             waypoint_threshold: Distance threshold to consider a waypoint reached
             trust_interface: Trust interface object
             active_scenario: Active scenario object
-            radar_observation: Radar observation data
             
         Returns:
             obs: Observation dictionary
         """
         # Get vehicle state observation
         vehicle_state = self._get_vehicle_state(vehicle, waypoints, current_waypoint_idx, waypoint_threshold)
+        
+        # Get location history
+        location_history = self._get_location_history(vehicle)
         
         # Get intervention observation
         intervention_obs = self._get_intervention_observation(trust_interface)
@@ -78,6 +112,7 @@ class ObservationManager:
         # Combine all observations
         obs = {
             'vehicle_state': vehicle_state,
+            'location_history': location_history,
             'recent_intervention': intervention_obs,
             'scenario_obs': scenario_obs,
             'radar_obs': radar_observation
@@ -97,13 +132,21 @@ class ObservationManager:
         Returns:
             numpy.ndarray: Vehicle state observation
         """
+        if vehicle is None or not waypoints:
+            return np.zeros(9 + 2 * self.num_observed_waypoints, dtype=np.float32)
+            
         velocity = vehicle.get_velocity()
         angular_velocity = vehicle.get_angular_velocity()
         acceleration = vehicle.get_acceleration()
         
         if waypoints and current_waypoint_idx < len(waypoints):
             observed_waypoints = waypoints[current_waypoint_idx:current_waypoint_idx+self.num_observed_waypoints]
-        
+            
+            # Pad with last waypoint if needed
+            if len(observed_waypoints) < self.num_observed_waypoints and observed_waypoints:
+                last_waypoint = observed_waypoints[-1]
+                observed_waypoints.extend([last_waypoint] * (self.num_observed_waypoints - len(observed_waypoints)))
+            
             # Initialize arrays for relative waypoint coordinates
             relative_waypoints = np.zeros((self.num_observed_waypoints, 2))
             
@@ -124,6 +167,9 @@ class ObservationManager:
                 relative_y = -dx * math.sin(yaw_rad) + dy * math.cos(yaw_rad)
                 
                 relative_waypoints[i] = np.array([relative_x, relative_y])
+        else:
+            # No waypoints available
+            relative_waypoints = np.zeros((self.num_observed_waypoints, 2))
 
         # Combine all vehicle state information
         vehicle_state = np.array([
@@ -134,6 +180,44 @@ class ObservationManager:
         ], dtype=np.float32)
         
         return vehicle_state
+    
+    def _get_location_history(self, vehicle):
+        """
+        Get the vehicle's location history in a vehicle-relative coordinate system.
+        
+        Args:
+            vehicle: CARLA vehicle object
+            
+        Returns:
+            numpy.ndarray: Flattened array of relative past positions
+        """
+        if vehicle is None or len(self.location_history) == 0:
+            # Return zeros if no history or no vehicle
+            return np.zeros(2 * self.location_history_length, dtype=np.float32)
+            
+        # Get current vehicle transform
+        vehicle_transform = vehicle.get_transform()
+        current_location = vehicle_transform.location
+        current_rotation = vehicle_transform.rotation
+        yaw_rad = math.radians(current_rotation.yaw)
+        
+        # Initialize array for relative positions
+        relative_positions = np.zeros((self.location_history_length, 2), dtype=np.float32)
+        
+        # Fill array with available history
+        for i, (x, y) in enumerate(self.location_history):
+            # Calculate relative position
+            dx = x - current_location.x
+            dy = y - current_location.y
+            
+            # Rotate to vehicle's coordinate system
+            relative_x = dx * math.cos(yaw_rad) + dy * math.sin(yaw_rad)
+            relative_y = -dx * math.sin(yaw_rad) + dy * math.cos(yaw_rad)
+            
+            relative_positions[i] = [relative_x, relative_y]
+            
+        # Flatten array
+        return relative_positions.flatten()
     
     def _get_intervention_observation(self, trust_interface):
         """
@@ -155,7 +239,6 @@ class ObservationManager:
         
         Args:
             active_scenario: Active scenario object
-            vehicle: CARLA vehicle object
             
         Returns:
             scenario_obs: Scenario-specific observations
@@ -166,4 +249,9 @@ class ObservationManager:
         if active_scenario:
             scenario_obs = active_scenario.get_observation()
         
-        return scenario_obs 
+        return scenario_obs
+        
+    def reset(self):
+        """Reset the observation manager"""
+        # Clear location history
+        self.location_history.clear() 

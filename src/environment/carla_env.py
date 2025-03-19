@@ -158,6 +158,9 @@ class CarlaEnv(gym.Env):
         # Update the world
         self.world.tick()
         
+        # Update the observation manager with current vehicle state
+        self.observation_manager.update(self.vehicle)
+        
         # Render if needed (but don't break training if rendering fails)
         if self.render_mode:
             try:
@@ -271,6 +274,9 @@ class CarlaEnv(gym.Env):
         # Reset action manager
         self.action_manager.reset()
         
+        # Reset observation manager
+        self.observation_manager.reset()
+        
         # Reset trust history
         self.trust_history = []
         
@@ -316,6 +322,9 @@ class CarlaEnv(gym.Env):
         
         # Tick the world to update
         self.world.tick()
+        
+        # Initialize the observation manager with the vehicle's initial position
+        self.observation_manager.update(self.vehicle)
         
         # Get observation using observation manager
         obs = self.observation_manager.get_observation(
