@@ -32,10 +32,12 @@ class CarlaEnvConfig:
     # History tracking
     max_trust_history: int = 100
     max_reward_history: int = 100
+    location_history_length: int = 5
     
     # Path following settings
     waypoint_threshold: float = 2.0  # meters
     path_length: int = 20  # number of waypoints
+    num_observed_waypoints: int = 3  # number of waypoints to include in observation
     
     # Decision point detection
     decision_point_distance: float = 20.0  # meters

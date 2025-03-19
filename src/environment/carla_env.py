@@ -131,8 +131,8 @@ class CarlaEnv(gym.Env):
             # Return empty observation, zero reward, and terminal state if vehicle doesn't exist
             obs = self.observation_manager.get_observation(
                 None, [], 0, self.waypoint_threshold, 
-                self.trust_interface, self.active_scenario, 
-                np.zeros((1, 360), dtype=np.float32)
+                self.trust_interface, self.active_scenario,
+                target_speed=self.target_speed
             )
             return obs, 0.0, True, False, {}
             
@@ -157,6 +157,9 @@ class CarlaEnv(gym.Env):
         
         # Update the world
         self.world.tick()
+        
+        # Update the observation manager with current vehicle state
+        self.observation_manager.update(self.vehicle)
         
         # Render if needed (but don't break training if rendering fails)
         if self.render_mode:
@@ -227,7 +230,8 @@ class CarlaEnv(gym.Env):
             self.current_waypoint_idx, 
             self.waypoint_threshold, 
             self.trust_interface, 
-            self.active_scenario, 
+            self.active_scenario,
+            target_speed=self.target_speed
         )
         
         # Store current control for next comparison
@@ -270,6 +274,9 @@ class CarlaEnv(gym.Env):
         
         # Reset action manager
         self.action_manager.reset()
+        
+        # Reset observation manager
+        self.observation_manager.reset()
         
         # Reset trust history
         self.trust_history = []
@@ -317,6 +324,9 @@ class CarlaEnv(gym.Env):
         # Tick the world to update
         self.world.tick()
         
+        # Initialize the observation manager with the vehicle's initial position
+        self.observation_manager.update(self.vehicle)
+        
         # Get observation using observation manager
         obs = self.observation_manager.get_observation(
             self.vehicle, 
@@ -324,7 +334,8 @@ class CarlaEnv(gym.Env):
             self.current_waypoint_idx, 
             self.waypoint_threshold, 
             self.trust_interface, 
-            self.active_scenario, 
+            self.active_scenario,
+            target_speed=self.target_speed
         )
         
         # Additional info

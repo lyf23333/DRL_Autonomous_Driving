@@ -102,7 +102,7 @@ class ActionManager:
         
         return control
     
-    def adjust_action_with_trust(self, action, trust_interface, is_near_decision_point):
+    def adjust_action_with_trust(self, action, trust_interface, is_near_decision_point, is_adjusting=True):
         """
         Adjust the agent's action based on trust level and driving behavior metrics.
         
@@ -155,6 +155,10 @@ class ActionManager:
             p=intervention_probabilities
         )
         
+        if not is_adjusting:
+            trust_interface.record_intervention(intervention_type)
+            return adjusted_action, current_intervention_prob
+
         if intervention_type == 'steer':
             # 1. Adjust steering based on stability and trust
             # Low stability or trust -> more conservative steering (reduced magnitude)
