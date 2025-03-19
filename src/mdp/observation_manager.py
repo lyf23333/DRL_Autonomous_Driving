@@ -23,11 +23,12 @@ class ObservationManager:
         """
         self.config = config
         self.sensor_manager = sensor_manager
+        self.num_observed_waypoints = 3
         # Define the observation space
         self.observation_space = spaces.Dict({
             'vehicle_state': spaces.Box(
-                low=np.array([-np.inf] * 16),
-                high=np.array([np.inf] * 16),
+                low=np.array([-np.inf] * (9 + 2 * self.num_observed_waypoints)),
+                high=np.array([np.inf] * (9 + 2 * self.num_observed_waypoints)),
                 dtype=np.float32
             ),
             'recent_intervention': spaces.Discrete(2),  # Binary: 0 or 1
@@ -96,90 +97,40 @@ class ObservationManager:
         Returns:
             numpy.ndarray: Vehicle state observation
         """
-        # Get vehicle transform
-        transform = vehicle.get_transform()
-        location = transform.location
-        rotation = transform.rotation
-        
-        # Get vehicle velocity and angular velocity
         velocity = vehicle.get_velocity()
         angular_velocity = vehicle.get_angular_velocity()
-        
-        # Get vehicle acceleration
         acceleration = vehicle.get_acceleration()
         
-        # Calculate speed (in km/h)
-        speed = 3.6 * math.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2)
-        
-        # Get current waypoint and next waypoint
-        current_waypoint = None
-        next_waypoint = None
-        
         if waypoints and current_waypoint_idx < len(waypoints):
-            current_waypoint = waypoints[current_waypoint_idx]
-            
-            # Calculate distance to current waypoint
-            distance_to_waypoint = math.sqrt(
-                (location.x - current_waypoint.transform.location.x)**2 +
-                (location.y - current_waypoint.transform.location.y)**2
-            )
-            
-            # Check if we need to move to the next waypoint
-            if distance_to_waypoint < waypoint_threshold and current_waypoint_idx + 1 < len(waypoints):
-                next_waypoint = waypoints[current_waypoint_idx + 1]
-            else:
-                next_waypoint = current_waypoint
+            observed_waypoints = waypoints[current_waypoint_idx:current_waypoint_idx+self.num_observed_waypoints]
         
-        # Default values if waypoints are not available
-        distance_to_waypoint = 0.0
-        angle_to_waypoint = 0.0
-        next_waypoint_x = 0.0
-        next_waypoint_y = 0.0
-        
-        if current_waypoint:
-            # Calculate distance to current waypoint
-            distance_to_waypoint = math.sqrt(
-                (location.x - current_waypoint.transform.location.x)**2 +
-                (location.y - current_waypoint.transform.location.y)**2
-            )
+            # Initialize arrays for relative waypoint coordinates
+            relative_waypoints = np.zeros((self.num_observed_waypoints, 2))
             
-            # Calculate angle to current waypoint
-            waypoint_direction = math.atan2(
-                current_waypoint.transform.location.y - location.y,
-                current_waypoint.transform.location.x - location.x
-            )
-            vehicle_direction = math.radians(rotation.yaw)
-            angle_to_waypoint = math.degrees(waypoint_direction - vehicle_direction)
+            # Get vehicle transform once for efficiency
+            vehicle_transform = vehicle.get_transform()
+            vehicle_location = vehicle_transform.location
+            vehicle_rotation = vehicle_transform.rotation
+            yaw_rad = math.radians(vehicle_rotation.yaw)
             
-            # Normalize angle to [-180, 180]
-            angle_to_waypoint = (angle_to_waypoint + 180) % 360 - 180
-            
-            # Get next waypoint location relative to vehicle
-            if next_waypoint:
-                # Transform next waypoint to vehicle's local coordinate system
-                vehicle_transform = vehicle.get_transform()
-                vehicle_location = vehicle_transform.location
-                vehicle_rotation = vehicle_transform.rotation
-                
+            # Calculate relative coordinates for each observed waypoint
+            for i, waypoint in enumerate(observed_waypoints):
                 # Calculate relative position
-                dx = next_waypoint.transform.location.x - vehicle_location.x
-                dy = next_waypoint.transform.location.y - vehicle_location.y
+                dx = waypoint.transform.location.x - vehicle_location.x
+                dy = waypoint.transform.location.y - vehicle_location.y
                 
                 # Rotate to vehicle's coordinate system
-                yaw_rad = math.radians(vehicle_rotation.yaw)
-                next_waypoint_x = dx * math.cos(yaw_rad) + dy * math.sin(yaw_rad)
-                next_waypoint_y = -dx * math.sin(yaw_rad) + dy * math.cos(yaw_rad)
-        
+                relative_x = dx * math.cos(yaw_rad) + dy * math.sin(yaw_rad)
+                relative_y = -dx * math.sin(yaw_rad) + dy * math.cos(yaw_rad)
+                
+                relative_waypoints[i] = np.array([relative_x, relative_y])
+
         # Combine all vehicle state information
         vehicle_state = np.array([
-            location.x, location.y, location.z,
-            rotation.pitch, rotation.yaw, rotation.roll,
             velocity.x, velocity.y, velocity.z,
             angular_velocity.x, angular_velocity.y, angular_velocity.z,
-            speed,
-            distance_to_waypoint,
-            angle_to_waypoint,
-            next_waypoint_x
+            acceleration.x, acceleration.y, acceleration.z,
+            *relative_waypoints.flatten()
         ], dtype=np.float32)
         
         return vehicle_state
