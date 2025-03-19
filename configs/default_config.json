@@ -1,0 +1,28 @@
+{
+    "town": "Town05",
+    "port": 2000,
+    "host": "localhost",
+    "timeout": 10.0,
+    "max_episode_steps": 1000,
+    "render_mode": "human",
+    "camera_width": 800,
+    "camera_height": 600,
+    "trust_viz_height": 280,
+    "show_waypoints": true,
+    "waypoint_lookahead": 20,
+    "max_trust_history": 100,
+    "max_reward_history": 100,
+    "waypoint_threshold": 2.0,
+    "path_length": 20,
+    "decision_point_distance": 20.0,
+    "base_target_speed": 20.0,
+    "min_target_speed": 5.0,
+    "reward_weights": {
+        "path": 1.0,
+        "progress": 1.0,
+        "safety": 1.5,
+        "comfort": 0.5,
+        "trust": 0.5,
+        "intervention": -1.0
+    }
+} 

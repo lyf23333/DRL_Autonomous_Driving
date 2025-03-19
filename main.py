@@ -6,6 +6,7 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.environment import CarlaEnv, CarlaEnvDiscrete
+from src.environment.carla_env_config import CarlaEnvConfig
 from src.trust.trust_interface import TrustInterface
 from src.agents.drl_agent import DRLAgent
 from scenarios import LaneSwitchingScenario, UrbanTrafficScenario, ObstacleAvoidanceScenario
@@ -67,19 +68,20 @@ def main():
             sys.exit(1)
     
     # Initialize environment with configurable parameters
+    env_config = CarlaEnvConfig()
+    env_config.town = args.town
+    env_config.port = args.port
+    env_config.render_mode = args.render
+    
     if args.algorithm == 'dqn':
         env = CarlaEnvDiscrete(
             trust_interface=TrustInterface(), 
-            town=args.town,
-            port=args.port,
-            render_mode=args.render
+            config=env_config
         )
     else:
         env = CarlaEnv(
             trust_interface=TrustInterface(), 
-            town=args.town,
-            port=args.port,
-            render_mode=args.render
+            config=env_config
         )
     
     # Initialize DRL agent

@@ -4,7 +4,9 @@ import numpy as np
 from gymnasium import spaces
 import math
 import pygame
+import os
 
+from .carla_env_config import CarlaEnvConfig
 from ..utils.env_utils import generate_control_from_action, spawn_ego_vehicle, generate_random_waypoints, check_decision_points
 from ..mdp.observation import get_obs
 from ..mdp.rewards import calculate_reward
@@ -16,17 +18,20 @@ from ..trust.trust_interface import TrustInterface
 class CarlaEnv(gym.Env):
     """Custom Carla environment that follows gymnasium interface"""
     
-    def __init__(self, trust_interface, town='Town01', port=2000, render_mode=None):
+    def __init__(self, trust_interface, config=None):
         self._initialized = False
         super(CarlaEnv, self).__init__()
         
+        # Load configuration
+        self.config = config
+        
         # Connect to CARLA server
-        self.client = carla.Client('localhost', port)
-        self.client.set_timeout(10.0)
+        self.client = carla.Client(self.config.host, self.config.port)
+        self.client.set_timeout(self.config.timeout)
         self.world = self.client.get_world()
 
         self.step_count = 0
-        self.max_episode_steps = 1000
+        self.max_episode_steps = self.config.max_episode_steps
         
         # Scenario management
         self.active_scenario = None
@@ -38,11 +43,11 @@ class CarlaEnv(gym.Env):
         
         # Decision point detection
         self.is_near_decision_point = False
-        self.decision_point_distance = 20.0  # meters
+        self.decision_point_distance = self.config.decision_point_distance  # meters
         
         # Target speed attributes
-        self.base_target_speed = 20.0  # km/h at max trust
-        self.min_target_speed = 5.0    # km/h at min trust
+        self.base_target_speed = self.config.base_target_speed  # km/h at max trust
+        self.min_target_speed = self.config.min_target_speed    # km/h at min trust
         self.target_speed = self.base_target_speed  # Default to base speed
         
         # Previous control state for detecting changes
@@ -50,22 +55,22 @@ class CarlaEnv(gym.Env):
         
         # Initialize sensor manager (will be properly set up when vehicle is spawned)
         self.sensor_manager = None
-        self.render_mode = render_mode
+        self.render_mode = self.config.render_mode
         
         # Camera view setup
-        self.camera_width = 800
-        self.camera_height = 600
+        self.camera_width = self.config.camera_width
+        self.camera_height = self.config.camera_height
         self.pygame_initialized = False
         self.screen = None
         
         # Trust visualization
         self.trust_history = []
-        self.max_trust_history = 100  # Number of trust values to keep in history
-        self.trust_viz_height = 280  # Increased from 220 to accommodate more information
+        self.max_trust_history = self.config.max_trust_history
+        self.trust_viz_height = self.config.trust_viz_height
         
         # Reward visualization
         self.reward_history = []
-        self.max_reward_history = 100  # Number of reward values to keep in history
+        self.max_reward_history = self.config.max_reward_history
         self.episode_reward = 0.0      # Cumulative reward for current episode
         
         # Reward component tracking
@@ -124,16 +129,16 @@ class CarlaEnv(gym.Env):
         # Path following attributes
         self.waypoints = []
         self.current_waypoint_idx = 0
-        self.waypoint_threshold = 2.0  # meters
-        self.path_length = 20  # Number of waypoints to generate
+        self.waypoint_threshold = self.config.waypoint_threshold  # meters
+        self.path_length = self.config.path_length  # Number of waypoints to generate
         
         # Generate initial random waypoints if vehicle is spawned
         if hasattr(self, 'vehicle') and self.vehicle is not None:
             self.waypoints, self.current_waypoint_idx = generate_random_waypoints(self.vehicle, self.world)
         
         # Visualization settings
-        self.show_waypoints = True  # Flag to toggle waypoint visualization
-        self.waypoint_lookahead = 20  # Number of waypoints to show ahead
+        self.show_waypoints = self.config.show_waypoints  # Flag to toggle waypoint visualization
+        self.waypoint_lookahead = self.config.waypoint_lookahead  # Number of waypoints to show ahead
         
         # Initialize termination manager
         self.termination_manager = TerminationManager(max_episode_steps=self.max_episode_steps)
@@ -209,7 +214,8 @@ class CarlaEnv(gym.Env):
             self.trust_interface, 
             self.active_scenario, 
             self.world, 
-            self.target_speed
+            self.target_speed,
+            reward_weights=self.config.reward_weights
         )
         
         # Update reward history for visualization
