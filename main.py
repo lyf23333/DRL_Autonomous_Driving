@@ -68,7 +68,7 @@ def main():
             sys.exit(1)
     
     # Initialize environment with configurable parameters
-    env_config = CarlaEnvConfig()
+    env_config = CarlaEnvConfig.from_json('configs/default_config.json')
     env_config.town = args.town
     env_config.port = args.port
     env_config.render_mode = args.render
