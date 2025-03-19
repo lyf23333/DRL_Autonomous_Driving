@@ -131,8 +131,8 @@ class CarlaEnv(gym.Env):
             # Return empty observation, zero reward, and terminal state if vehicle doesn't exist
             obs = self.observation_manager.get_observation(
                 None, [], 0, self.waypoint_threshold, 
-                self.trust_interface, self.active_scenario, 
-                np.zeros((1, 360), dtype=np.float32)
+                self.trust_interface, self.active_scenario,
+                target_speed=self.target_speed
             )
             return obs, 0.0, True, False, {}
             
@@ -230,7 +230,8 @@ class CarlaEnv(gym.Env):
             self.current_waypoint_idx, 
             self.waypoint_threshold, 
             self.trust_interface, 
-            self.active_scenario, 
+            self.active_scenario,
+            target_speed=self.target_speed
         )
         
         # Store current control for next comparison
@@ -333,7 +334,8 @@ class CarlaEnv(gym.Env):
             self.current_waypoint_idx, 
             self.waypoint_threshold, 
             self.trust_interface, 
-            self.active_scenario, 
+            self.active_scenario,
+            target_speed=self.target_speed
         )
         
         # Additional info

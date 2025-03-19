@@ -39,8 +39,8 @@ class ObservationManager:
         # Define the observation space
         self.observation_space = spaces.Dict({
             'vehicle_state': spaces.Box(
-                low=np.array([-np.inf] * (6 + 2 * self.num_observed_waypoints)),
-                high=np.array([np.inf] * (6 + 2 * self.num_observed_waypoints)),
+                low=np.array([-np.inf] * (7 + 2 * self.num_observed_waypoints)),  # Added 1 for target speed
+                high=np.array([np.inf] * (7 + 2 * self.num_observed_waypoints)),
                 dtype=np.float32
             ),
             'location_history': spaces.Box(
@@ -79,7 +79,7 @@ class ObservationManager:
         self.location_history.append((location.x, location.y))
     
     def get_observation(self, vehicle, waypoints, current_waypoint_idx, waypoint_threshold, 
-                       trust_interface, active_scenario):
+                       trust_interface, active_scenario, target_speed=20.0):
         """
         Generate observation from environment state.
         
@@ -90,12 +90,13 @@ class ObservationManager:
             waypoint_threshold: Distance threshold to consider a waypoint reached
             trust_interface: Trust interface object
             active_scenario: Active scenario object
+            target_speed: Current target speed in km/h
             
         Returns:
             obs: Observation dictionary
         """
         # Get vehicle state observation
-        vehicle_state = self._get_vehicle_state(vehicle, waypoints, current_waypoint_idx, waypoint_threshold)
+        vehicle_state = self._get_vehicle_state(vehicle, waypoints, current_waypoint_idx, waypoint_threshold, target_speed)
         
         # Get location history
         location_history = self._get_location_history(vehicle)
@@ -120,7 +121,7 @@ class ObservationManager:
         
         return obs
     
-    def _get_vehicle_state(self, vehicle, waypoints, current_waypoint_idx, waypoint_threshold):
+    def _get_vehicle_state(self, vehicle, waypoints, current_waypoint_idx, waypoint_threshold, target_speed=20.0):
         """Get vehicle state observation
         
         Args:
@@ -128,12 +129,13 @@ class ObservationManager:
             waypoints: List of waypoints for path following
             current_waypoint_idx: Index of the current waypoint
             waypoint_threshold: Distance threshold for waypoint completion
+            target_speed: Current target speed in km/h
             
         Returns:
             numpy.ndarray: Vehicle state observation
         """
         if vehicle is None or not waypoints:
-            return np.zeros(6 + 2 * self.num_observed_waypoints, dtype=np.float32)
+            return np.zeros(7 + 2 * self.num_observed_waypoints, dtype=np.float32)  # Updated size
             
         velocity = vehicle.get_velocity()
         angular_velocity = vehicle.get_angular_velocity()
@@ -171,11 +173,15 @@ class ObservationManager:
             # No waypoints available
             relative_waypoints = np.zeros((self.num_observed_waypoints, 2))
 
+        # Normalize target speed (assuming max is around 50 km/h)
+        normalized_target_speed = target_speed / 50.0
+
         # Combine all vehicle state information
         vehicle_state = np.array([
             vehicle_transform.rotation.yaw / 360.0,
             velocity.x, velocity.y, angular_velocity.z,
             acceleration.x, acceleration.y,
+            normalized_target_speed,  # Add normalized target speed
             *relative_waypoints.flatten()
         ], dtype=np.float32)
         
