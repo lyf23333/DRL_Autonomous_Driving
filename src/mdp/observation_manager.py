@@ -13,15 +13,16 @@ class ObservationManager:
     Manages the observation space and processing for the CARLA environment.
     """
     
-    def __init__(self, config=None):
+    def __init__(self, config=None, sensor_manager=None):
         """
         Initialize the observation manager.
         
         Args:
             config: Configuration object with observation settings
+            sensor_manager: Sensor manager object
         """
         self.config = config
-        
+        self.sensor_manager = sensor_manager
         # Define the observation space
         self.observation_space = spaces.Dict({
             'vehicle_state': spaces.Box(
@@ -45,7 +46,7 @@ class ObservationManager:
         })
     
     def get_observation(self, vehicle, waypoints, current_waypoint_idx, waypoint_threshold, 
-                       trust_interface, active_scenario, radar_observation):
+                       trust_interface, active_scenario):
         """
         Generate observation from environment state.
         
@@ -69,6 +70,9 @@ class ObservationManager:
         
         # Get scenario observation
         scenario_obs = self._get_scenario_observation(active_scenario)
+
+        # Get radar observation
+        radar_observation = self.sensor_manager.get_radar_observation()
         
         # Combine all observations
         obs = {

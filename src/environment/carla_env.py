@@ -26,12 +26,14 @@ class CarlaEnv(gym.Env):
         self.client = carla.Client(self.config.host, self.config.port)
         self.client.set_timeout(self.config.timeout)
         self.world = self.client.get_world()
+        self.render_mode = self.config.render_mode
 
-        self.step_count = 0
-        self.max_episode_steps = self.config.max_episode_steps
-        
+        # Spawn new vehicle
+        self.vehicle, self.spawn_point = spawn_ego_vehicle(self.world)
+
         # Initialize observation and action managers
-        self.observation_manager = ObservationManager(self.config)
+        self.sensor_manager = SensorManager(self.world, self.vehicle, self.render_mode)
+        self.observation_manager = ObservationManager(self.config, self.sensor_manager)
         self.action_manager = ActionManager(self.config)
         
         # Set the action and observation spaces from the managers
@@ -43,12 +45,11 @@ class CarlaEnv(gym.Env):
         
         # Trust-related attributes
         self.trust_interface: TrustInterface = trust_interface
+
+        # Environment attributes
         self.last_step_time = None
-        self.current_intervention_prob = 0.0  # Probability of intervention in current step
-        
-        # Decision point detection
-        self.is_near_decision_point = False
-        self.decision_point_distance = self.config.decision_point_distance  # meters
+        self.step_count = 0
+        self.max_episode_steps = self.config.max_episode_steps
         
         # Target speed attributes
         self.base_target_speed = self.config.base_target_speed  # km/h at max trust
@@ -57,10 +58,6 @@ class CarlaEnv(gym.Env):
         
         # Previous control state for detecting changes
         self.prev_control = None
-        
-        # Initialize sensor manager (will be properly set up when vehicle is spawned)
-        self.sensor_manager = None
-        self.render_mode = self.config.render_mode
         
         # Camera view setup
         self.camera_width = self.config.camera_width
@@ -142,10 +139,14 @@ class CarlaEnv(gym.Env):
         # Store previous control for comparison
         if self.prev_control is None:
             self.prev_control = self.vehicle.get_control()
+
+        # Check for decision points (intersections, lane merges, etc.)
+        is_near_decision_point = check_decision_points(self.vehicle, self.world, self.config.decision_point_distance)
+        self.trust_interface.set_near_decision_point(is_near_decision_point)
             
         # Process action through action manager - with trust-based adjustments
-        adjusted_action, self.current_intervention_prob = self.action_manager.adjust_action_with_trust(
-            action, self.trust_interface, self.is_near_decision_point
+        adjusted_action, current_intervention_prob = self.action_manager.adjust_action_with_trust(
+            action, self.trust_interface, is_near_decision_point
         )
         
         # Generate CARLA vehicle control from processed action
@@ -164,10 +165,6 @@ class CarlaEnv(gym.Env):
             except Exception as e:
                 print(f"Warning: Rendering failed: {e}")
         
-        # Check for decision points (intersections, lane merges, etc.)
-        self.is_near_decision_point = check_decision_points(self.vehicle, self.world, self.decision_point_distance)
-        self.trust_interface.set_near_decision_point(self.is_near_decision_point)
-
         # Update driving metrics in trust interface
         self.trust_interface.update_driving_metrics(self.vehicle)
         
@@ -212,8 +209,6 @@ class CarlaEnv(gym.Env):
             self.reward_history.pop(0)
         self.reward_history.append(reward)
         
-        self.step_count += 1
-        
         # Check if done
         terminated, truncated = self.termination_manager.check_termination(
             self.vehicle, 
@@ -225,9 +220,6 @@ class CarlaEnv(gym.Env):
             self.sensor_manager.collision_detected
         )
         
-        # Get radar observation
-        radar_observation = self.sensor_manager.get_radar_observation()
-        
         # Get observation using observation manager
         obs = self.observation_manager.get_observation(
             self.vehicle, 
@@ -236,7 +228,6 @@ class CarlaEnv(gym.Env):
             self.waypoint_threshold, 
             self.trust_interface, 
             self.active_scenario, 
-            radar_observation
         )
         
         # Store current control for next comparison
@@ -249,11 +240,13 @@ class CarlaEnv(gym.Env):
             'target_speed': self.target_speed,
             'step_count': self.step_count,
             'driving_metrics': self.trust_interface.driving_metrics if self.trust_interface else {},
-            'is_near_decision_point': self.is_near_decision_point,
+            'is_near_decision_point': is_near_decision_point,
             'behavior_adjustment': self.trust_interface.behavior_adjustment,
-            'intervention_probability': self.current_intervention_prob,
+            'intervention_probability': current_intervention_prob,
             'intervention_active': self.trust_interface.intervention_active
         }
+
+        self.step_count += 1
         
         return obs, reward, terminated, truncated, info
 
@@ -297,7 +290,6 @@ class CarlaEnv(gym.Env):
         
         # Reset trust-related attributes
         self.prev_control = None
-        self.current_intervention_prob = 0.0
         self.last_step_time = None
         self.trust_interface.reset()
         
@@ -305,20 +297,15 @@ class CarlaEnv(gym.Env):
         self.termination_manager.reset()
             
         # Destroy existing vehicle if any
-        if hasattr(self, 'vehicle') and self.vehicle is not None:
-            if self.vehicle.is_alive:
-                self.vehicle.destroy()
-            self.vehicle = None
-        
+        if self.vehicle.is_alive:
+            self.vehicle.destroy()
+
         # Spawn new vehicle
         self.vehicle, self.spawn_point = spawn_ego_vehicle(self.world)
         
         # Setup sensor manager with the new vehicle
-        if self.sensor_manager:
-            self.sensor_manager.reset()
-            self.sensor_manager.set_vehicle(self.vehicle)
-        else:
-            self.sensor_manager = SensorManager(self.world, self.vehicle, self.render_mode)
+        self.sensor_manager.reset()
+        self.sensor_manager.set_vehicle(self.vehicle)
         
         # Generate random waypoints for the new vehicle position
         self.waypoints, self.current_waypoint_idx = generate_random_waypoints(self.vehicle, self.world)
