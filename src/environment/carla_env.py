@@ -1,14 +1,11 @@
 import carla
 import gymnasium as gym
 import numpy as np
-from gymnasium import spaces
-import math
 import pygame
-import os
 
-from .carla_env_config import CarlaEnvConfig
-from ..utils.env_utils import generate_control_from_action, spawn_ego_vehicle, generate_random_waypoints, check_decision_points
-from ..mdp.observation import get_obs
+from ..mdp.observation_manager import ObservationManager
+from ..mdp.action_manager import ActionManager
+from ..utils.env_utils import spawn_ego_vehicle, generate_random_waypoints, check_decision_points
 from ..mdp.rewards import calculate_reward
 from ..utils.viz_utils import render_trust_visualization, render_waypoints_on_camera
 from ..utils.sensors import SensorManager
@@ -18,7 +15,7 @@ from ..trust.trust_interface import TrustInterface
 class CarlaEnv(gym.Env):
     """Custom Carla environment that follows gymnasium interface"""
     
-    def __init__(self, trust_interface, config=None):
+    def __init__(self, trust_interface, config):
         self._initialized = False
         super(CarlaEnv, self).__init__()
         
@@ -32,6 +29,14 @@ class CarlaEnv(gym.Env):
 
         self.step_count = 0
         self.max_episode_steps = self.config.max_episode_steps
+        
+        # Initialize observation and action managers
+        self.observation_manager = ObservationManager(self.config)
+        self.action_manager = ActionManager(self.config)
+        
+        # Set the action and observation spaces from the managers
+        self.action_space = self.action_manager.action_space
+        self.observation_space = self.observation_manager.observation_space
         
         # Scenario management
         self.active_scenario = None
@@ -97,35 +102,6 @@ class CarlaEnv(gym.Env):
                 print("Warning: Pygame initialization failed. Camera view will not be displayed.")
                 self.pygame_initialized = False
         
-        # Set up action and observation spaces
-        self.action_space = spaces.Box(
-            low=np.array([-1.0, -1.0]),  # [steering, throttle/brake]
-            high=np.array([1.0, 1.0]),
-            dtype=np.float32
-        )
-        
-        # Observation space includes vehicle state, path info, and intervention history
-        self.observation_space = spaces.Dict({
-            'vehicle_state': spaces.Box(
-                low=np.array([-np.inf] * 16),
-                high=np.array([np.inf] * 16),
-                dtype=np.float32
-            ),
-            'recent_intervention': spaces.Discrete(2),  # Binary: 0 or 1
-            'scenario_obs': spaces.Box(
-                low=-np.inf,
-                high=np.inf,
-                shape=(15,),  # Updated for 3 vehicles with 5 values each
-                dtype=np.float32
-            ),
-            'radar_obs': spaces.Box(
-                low=0.0,
-                high=20.0,  # Maximum radar range is now configurable
-                shape=(1, 360),  # 1 layer, 360 azimuth angles (1-degree resolution)
-                dtype=np.float32
-            )
-        })
-        
         # Path following attributes
         self.waypoints = []
         self.current_waypoint_idx = 0
@@ -155,15 +131,27 @@ class CarlaEnv(gym.Env):
     def step(self, action):
         """Take a step in the environment"""
         if not hasattr(self, 'vehicle') or self.vehicle is None:
-            return self._get_obs(), 0.0, True, False, {}
+            # Return empty observation, zero reward, and terminal state if vehicle doesn't exist
+            obs = self.observation_manager.get_observation(
+                None, [], 0, self.waypoint_threshold, 
+                self.trust_interface, self.active_scenario, 
+                np.zeros((1, 360), dtype=np.float32)
+            )
+            return obs, 0.0, True, False, {}
             
         # Store previous control for comparison
         if self.prev_control is None:
             self.prev_control = self.vehicle.get_control()
             
-        # Apply action to vehicle - with trust-based adjustments
-        adjusted_action = self._adjust_action_based_on_trust(action)
-        control = generate_control_from_action(adjusted_action)
+        # Process action through action manager - with trust-based adjustments
+        adjusted_action, self.current_intervention_prob = self.action_manager.adjust_action_with_trust(
+            action, self.trust_interface, self.is_near_decision_point
+        )
+        
+        # Generate CARLA vehicle control from processed action
+        control = self.action_manager.generate_vehicle_control(adjusted_action)
+        
+        # Apply control to vehicle
         self.vehicle.apply_control(control)
         
         # Update the world
@@ -237,11 +225,19 @@ class CarlaEnv(gym.Env):
             self.sensor_manager.collision_detected
         )
         
-        # Get observation
-        obs = get_obs(self.vehicle, self.waypoints, self.current_waypoint_idx, self.waypoint_threshold, self.trust_interface, self.active_scenario)
+        # Get radar observation
+        radar_observation = self.sensor_manager.get_radar_observation()
         
-        # Add radar observation to the observation dictionary
-        obs['radar_obs'] = self.sensor_manager.get_radar_observation()
+        # Get observation using observation manager
+        obs = self.observation_manager.get_observation(
+            self.vehicle, 
+            self.waypoints, 
+            self.current_waypoint_idx, 
+            self.waypoint_threshold, 
+            self.trust_interface, 
+            self.active_scenario, 
+            radar_observation
+        )
         
         # Store current control for next comparison
         self.prev_control = control
@@ -279,8 +275,8 @@ class CarlaEnv(gym.Env):
         # Reset step counter
         self.step_count = 0
         
-        # Reset stuck detection
-        self.low_speed_counter = 0
+        # Reset action manager
+        self.action_manager.reset()
         
         # Reset trust history
         self.trust_history = []
@@ -334,11 +330,19 @@ class CarlaEnv(gym.Env):
         # Tick the world to update
         self.world.tick()
         
-        # Get initial observation
-        obs = get_obs(self.vehicle, self.waypoints, self.current_waypoint_idx, self.waypoint_threshold, self.trust_interface, self.active_scenario)
+        # Get radar observation
+        radar_observation = self.sensor_manager.get_radar_observation()
         
-        # Add radar observation to the observation dictionary
-        obs['radar_obs'] = self.sensor_manager.get_radar_observation()
+        # Get observation using observation manager
+        obs = self.observation_manager.get_observation(
+            self.vehicle, 
+            self.waypoints, 
+            self.current_waypoint_idx, 
+            self.waypoint_threshold, 
+            self.trust_interface, 
+            self.active_scenario, 
+            radar_observation
+        )
         
         # Additional info
         info = {
@@ -356,78 +360,6 @@ class CarlaEnv(gym.Env):
         
         # 1. Update target speed based on trust level
         self.target_speed = self.min_target_speed + (self.base_target_speed - self.min_target_speed) * trust_level
-    
-    def _adjust_action_based_on_trust(self, action):
-        """Adjust the agent's action based on trust level and driving behavior metrics"""
-        # Make a copy of the original action
-        adjusted_action = np.array(action, dtype=np.float32)
-        
-        # Get behavior adjustment from trust interface
-        behavior = self.trust_interface.get_behavior_adjustment()
-        trust_level = behavior['trust_level']
-        stability_factor = behavior['stability_factor']
-        smoothness_factor = behavior['smoothness_factor']
-        hesitation_factor = behavior['hesitation_factor']
-        
-        # Base intervention probability - higher when trust is lower
-        base_intervention_prob = (1.0 - trust_level) * 0.2  # Range: 0.0 to 0.2
-
-        # Higher probability near decision points
-        decision_point_factor = 0.04 if self.is_near_decision_point else 0.0
-        
-        # Combine probabilities
-        intervention_prob = base_intervention_prob + decision_point_factor
-        
-        # Cap at reasonable maximum
-        intervention_prob = min(0.5, intervention_prob)  # Max 50% chance per step
-        
-        # Store the current intervention probability for debugging/visualization
-        self.current_intervention_prob = intervention_prob
-        self.trust_interface.current_intervention_prob = intervention_prob
-        
-        # Decide whether to intervene this step
-        if np.random.random() > intervention_prob:
-            # No intervention this step - return original action unchanged
-            return adjusted_action
-
-        # randomly choose intervention type to apply accprding to the facotrs
-        intervention_probabilities= [1 - stability_factor, 1 - smoothness_factor, hesitation_factor]
-        # Normalize probabilities
-        intervention_probabilities = np.array(intervention_probabilities) / (np.sum(intervention_probabilities) + 1e-6)
-        intervention_probabilities[-1] = 1 - np.sum(intervention_probabilities[:-1])
-        intervention_type = np.random.choice(
-            ['steer', 'throttle_or_brake', 'hesitation'], 
-            p=intervention_probabilities
-        )
-        
-        if intervention_type == 'steer':
-            # 1. Adjust steering based on stability
-            # Low stability -> more conservative steering (reduced magnitude)
-            steering_adjustment = 0.5 + 0.5 * stability_factor  # Range: 0.5 to 1.0
-            adjusted_action[0] *= steering_adjustment
-        
-        elif intervention_type == 'throttle_or_brake':
-            # 2. Adjust throttle/brake based on trust and smoothness
-            # Low trust or smoothness -> more gentle acceleration, stronger braking
-            if adjusted_action[1] > 0:  # Throttle
-                # Low trust or smoothness -> reduce throttle
-                throttle_adjustment = 0.3 + 0.7 * (trust_level * smoothness_factor)  # Range: 0.3 to 1.0
-                adjusted_action[1] *= throttle_adjustment
-                intervention_type = 'throttle'
-            else:  # Brake
-                # Low trust -> increase braking force
-                brake_adjustment = 1.0 + (1.0 - trust_level) * 0.5  # Range: 1.0 to 1.5
-                adjusted_action[1] *= brake_adjustment
-                intervention_type = 'brake'
-        elif intervention_type == 'hesitation':
-            # 3. Add hesitation effect (random small delays or reduced actions) 
-            if hesitation_factor > 0.3 and np.random.random() < hesitation_factor * 0.5:
-                # Occasionally reduce action magnitude to simulate hesitation
-                hesitation_reduction = 1.0 - (hesitation_factor * 0.5)  # Range: 0.85 to 0.5
-                adjusted_action *= hesitation_reduction
-        
-        self.trust_interface.record_intervention(intervention_type)
-        return adjusted_action
     
     def close(self):
         """Clean up resources when environment is closed"""

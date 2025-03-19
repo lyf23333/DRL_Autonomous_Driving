@@ -48,6 +48,17 @@ class CarlaEnvConfig:
     initial_trust: float = 0.75
     trust_change_rate: float = 0.05
     
+    # Action settings
+    max_steering_angle: float = 1.0
+    max_throttle: float = 1.0
+    max_brake: float = 1.0
+    steering_smoothing: float = 0.2
+    throttle_smoothing: float = 0.1
+    
+    # Observation settings
+    radar_range: float = 20.0  # meters
+    max_detectable_vehicles: int = 3
+    
     # Reward component weights
     reward_weights: Dict[str, float] = None
     
@@ -84,7 +95,15 @@ class CarlaEnvConfig:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary"""
-        return {field: getattr(self, field) for field in self.__dataclass_fields__}
+        result = {}
+        for field in self.__dataclass_fields__:
+            value = getattr(self, field)
+            # Convert None, complex objects, etc. to JSON-serializable format
+            if hasattr(value, 'to_dict'):
+                result[field] = value.to_dict()
+            else:
+                result[field] = value
+        return result
     
     def to_json(self, json_path: str) -> None:
         """Save configuration to a JSON file"""

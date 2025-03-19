@@ -151,7 +151,7 @@ class UrbanTrafficScenario:
             traffic_light.set_yellow_time(2.0)
             traffic_light.set_red_time(5.0)
     
-    def get_scenario_specific_obs(self):
+    def get_observation(self):
         """Get scenario-specific observations for the three nearest vehicles
         
         Returns:
