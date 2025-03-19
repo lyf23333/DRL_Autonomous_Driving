@@ -317,9 +317,6 @@ class CarlaEnv(gym.Env):
         # Tick the world to update
         self.world.tick()
         
-        # Get radar observation
-        radar_observation = self.sensor_manager.get_radar_observation()
-        
         # Get observation using observation manager
         obs = self.observation_manager.get_observation(
             self.vehicle, 
@@ -328,7 +325,6 @@ class CarlaEnv(gym.Env):
             self.waypoint_threshold, 
             self.trust_interface, 
             self.active_scenario, 
-            radar_observation
         )
         
         # Additional info
