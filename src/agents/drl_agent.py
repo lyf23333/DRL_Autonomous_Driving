@@ -20,6 +20,9 @@ class DRLAgent:
         os.makedirs(self.tensorboard_log, exist_ok=True)
         self.tb_writer = None
         
+        # Default checkpoint frequency
+        self.checkpoint_freq = 100000  # Save every 100k timesteps
+        
         # Initialize the appropriate algorithm
         self.model = self._create_model()
         
@@ -67,11 +70,24 @@ class DRLAgent:
         run_name = f"{self.algorithm}_{scenario.__class__.__name__}_{int(time.time())}"
         self.tb_writer = SummaryWriter(os.path.join(self.tensorboard_log, run_name))
         
-        # Custom callback function for logging
+        # Create directory for checkpoints
+        checkpoints_dir = os.path.join(self.models_dir, "checkpoints", run_name)
+        os.makedirs(checkpoints_dir, exist_ok=True)
+        
+        # Custom callback function for logging and checkpointing
         def custom_callback(locals, globals):
             """Custom callback for logging during training"""
             # Get current step
             step = locals.get('self').num_timesteps
+            
+            # Save checkpoint every checkpoint_freq steps
+            if step > 0 and step % self.checkpoint_freq == 0:
+                checkpoint_path = os.path.join(
+                    checkpoints_dir,
+                    f"{self.algorithm}_{scenario.__class__.__name__}_steps_{step}.zip"
+                )
+                self.model.save(checkpoint_path)
+                print(f"\nCheckpoint saved at step {step}: {checkpoint_path}\n")
             
             # Get the current info
             infos = locals.get('infos', [{}])
@@ -259,14 +275,48 @@ class DRLAgent:
             print("Cleanup complete.")
     
     def load(self, model_path):
-        """Load a trained model"""
-        if self.algorithm == 'ppo':
-            self.model = PPO.load(model_path, env=self.env)
-        elif self.algorithm == 'sac':
-            self.model = SAC.load(model_path, env=self.env)
-        elif self.algorithm == 'ddpg':
-            self.model = DDPG.load(model_path, env=self.env)
-        elif self.algorithm == 'dqn':
-            self.model = DQN.load(model_path, env=self.env)
-        else:
-            raise ValueError(f"Unsupported algorithm for loading: {self.algorithm}") 
+        """Load a trained model from a file
+        
+        This method can be used to load either a full model or a checkpoint saved during training.
+        
+        Example usage:
+            # Load the final model
+            agent.load("models/ppo/ppo_ObstacleAvoidanceScenario.zip")
+            
+            # Load a checkpoint
+            agent.load("models/ppo/checkpoints/ppo_ObstacleAvoidanceScenario_1650123456/ppo_ObstacleAvoidanceScenario_steps_100000.zip")
+        
+        Args:
+            model_path (str): Path to the saved model file (.zip)
+        """
+        try:
+            # Determine algorithm type from the model path
+            if 'ppo' in model_path.lower():
+                self.model = PPO.load(model_path, env=self.env)
+                algorithm = 'ppo'
+            elif 'sac' in model_path.lower():
+                self.model = SAC.load(model_path, env=self.env)
+                algorithm = 'sac'
+            elif 'ddpg' in model_path.lower():
+                self.model = DDPG.load(model_path, env=self.env)
+                algorithm = 'ddpg'
+            elif 'dqn' in model_path.lower():
+                self.model = DQN.load(model_path, env=self.env)
+                algorithm = 'dqn'
+            else:
+                # Default to the algorithm specified in the constructor
+                if self.algorithm == 'ppo':
+                    self.model = PPO.load(model_path, env=self.env)
+                elif self.algorithm == 'sac':
+                    self.model = SAC.load(model_path, env=self.env)
+                elif self.algorithm == 'ddpg':
+                    self.model = DDPG.load(model_path, env=self.env)
+                elif self.algorithm == 'dqn':
+                    self.model = DQN.load(model_path, env=self.env)
+                algorithm = self.algorithm
+                
+            print(f"Successfully loaded {algorithm.upper()} model from {model_path}")
+            
+        except Exception as e:
+            print(f"Error loading model from {model_path}: {e}")
+            raise 

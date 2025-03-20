@@ -75,6 +75,48 @@ pip3 install -r requirements.txt
 
 ## Running Scenarios
 
+### Training and Evaluation
+
+You can train and evaluate DRL agents on different scenarios using the main script:
+
+**Training**:
+```bash
+python3 main.py --scenario urban_traffic --algorithm ppo --train --render
+```
+
+**Evaluation**:
+```bash
+python3 main.py --scenario urban_traffic --algorithm ppo --eval --render
+```
+
+### Model Checkpointing and Loading
+
+The system now supports automatic model checkpointing during training and loading of saved models:
+
+**Training with Custom Checkpoint Frequency**:
+```bash
+python3 main.py --scenario urban_traffic --algorithm ppo --train --checkpoint-freq 50000
+```
+This will save model checkpoints every 50,000 timesteps in the `models/ppo/checkpoints/` directory.
+
+**Loading a Saved Model**:
+```bash
+python3 main.py --scenario urban_traffic --algorithm ppo --eval --load-model models/ppo/ppo_UrbanTrafficScenario.zip
+```
+
+**Resuming Training from a Checkpoint**:
+```bash
+python3 main.py --scenario urban_traffic --algorithm ppo --train --load-model models/ppo/checkpoints/ppo_UrbanTrafficScenario_1650123456/ppo_UrbanTrafficScenario_steps_100000.zip --resume-training
+```
+
+Additional training and model options:
+```
+--timesteps N          Total number of timesteps for training (default: 100000)
+--load-model PATH      Path to a trained model or checkpoint to load
+--checkpoint-freq N    Save checkpoint every N timesteps (default: 100000)
+--resume-training      Resume training from the loaded model
+```
+
 ### Integrated CARLA Server Management
 
 The project now includes an integrated CARLA server manager that can automatically start and stop the CARLA simulator as part of your training or evaluation pipeline. This eliminates the need to manually start CARLA in a separate terminal.
