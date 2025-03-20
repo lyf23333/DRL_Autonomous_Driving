@@ -2,6 +2,7 @@ import carla
 import gymnasium as gym
 import numpy as np
 import pygame
+import math
 
 from ..mdp.observation_manager import ObservationManager
 from ..mdp.action_manager import ActionManager
@@ -161,6 +162,9 @@ class CarlaEnv(gym.Env):
         # Update the observation manager with current vehicle state
         self.observation_manager.update(self.vehicle)
         
+        # Check if we've reached the current waypoint and update if needed
+        self._update_waypoint_index()
+        
         # Render if needed (but don't break training if rendering fails)
         if self.render_mode:
             try:
@@ -247,8 +251,7 @@ class CarlaEnv(gym.Env):
             'is_near_decision_point': is_near_decision_point,
             'behavior_adjustment': self.trust_interface.behavior_adjustment,
             'intervention_probability': current_intervention_prob,
-            'intervention_active': self.trust_interface.intervention_active,
-            'reward_components': self.reward_components
+            'intervention_active': self.trust_interface.intervention_active
         }
 
         self.step_count += 1
@@ -446,3 +449,37 @@ class CarlaEnv(gym.Env):
                 return camera_array  # Return the RGB array for 'rgb_array' mode
         
         return None
+
+    def _update_waypoint_index(self):
+        """
+        Check if we've reached the current waypoint and update the waypoint index accordingly.
+        """
+        if not self.waypoints or self.current_waypoint_idx >= len(self.waypoints) or self.vehicle is None:
+            return
+            
+        # Get vehicle location
+        vehicle_location = self.vehicle.get_location()
+        
+        # Get current waypoint location
+        current_waypoint = self.waypoints[self.current_waypoint_idx]
+        waypoint_location = current_waypoint.transform.location
+        
+        # Calculate distance to current waypoint
+        distance = math.sqrt(
+            (vehicle_location.x - waypoint_location.x) ** 2 +
+            (vehicle_location.y - waypoint_location.y) ** 2
+        )
+        
+        # If we've reached the waypoint, increment the index
+        if distance < self.waypoint_threshold:
+            self.current_waypoint_idx += 1
+            
+            # Log waypoint progress
+            waypoints_remaining = len(self.waypoints) - self.current_waypoint_idx
+            if waypoints_remaining > 0:
+                print(f"Reached waypoint {self.current_waypoint_idx}/{len(self.waypoints)}. {waypoints_remaining} remaining.")
+            else:
+                print(f"Reached final waypoint! ({self.current_waypoint_idx}/{len(self.waypoints)})")
+                
+            # Limit the index to the available waypoints
+            self.current_waypoint_idx = min(self.current_waypoint_idx, len(self.waypoints) - 1)

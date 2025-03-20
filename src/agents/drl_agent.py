@@ -111,6 +111,12 @@ class DRLAgent:
                 self.tb_writer.add_scalar('Metrics/intervention_active', 
                                         1.0 if info.get('intervention_active', False) else 0.0, step)
                 
+                # Log waypoint progress
+                self.tb_writer.add_scalar('Metrics/current_waypoint_idx', 
+                                         info.get('current_waypoint_idx', 0), step)
+                self.tb_writer.add_scalar('Metrics/waypoints_remaining', 
+                                         info.get('waypoints_remaining', 0), step)
+                
             return True
             
         try:
@@ -205,6 +211,12 @@ class DRLAgent:
                                              info.get('intervention_probability', 0), step)
                     self.tb_writer.add_scalar('Metrics/intervention_active', 
                                              1.0 if info.get('intervention_active', False) else 0.0, step)
+                    
+                    # Log waypoint progress
+                    self.tb_writer.add_scalar('Metrics/current_waypoint_idx', 
+                                             info.get('current_waypoint_idx', 0), step)
+                    self.tb_writer.add_scalar('Metrics/waypoints_remaining', 
+                                             info.get('waypoints_remaining', 0), step)
                     
                     # Increment steps
                     step += 1
