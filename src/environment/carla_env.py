@@ -247,7 +247,8 @@ class CarlaEnv(gym.Env):
             'is_near_decision_point': is_near_decision_point,
             'behavior_adjustment': self.trust_interface.behavior_adjustment,
             'intervention_probability': current_intervention_prob,
-            'intervention_active': self.trust_interface.intervention_active
+            'intervention_active': self.trust_interface.intervention_active,
+            'reward_components': self.reward_components
         }
 
         self.step_count += 1
