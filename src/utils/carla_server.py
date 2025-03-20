@@ -25,7 +25,7 @@ class CarlaServerManager:
             paths = [
                 os.environ.get("CARLA_ROOT"),
                 "C:\\CARLA\\WindowsNoEditor",
-                "C:\\CARLA_0.9.13\\WindowsNoEditor"
+                "C:\\carla-0.9.15"
             ]
             executable = "CarlaUE4.exe"
         else:  # Linux/Mac
