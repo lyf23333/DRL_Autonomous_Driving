@@ -212,14 +212,9 @@ def calculate_path_reward(vehicle, waypoints, current_waypoint_idx, waypoint_thr
     # Get vehicle velocity
     velocity = vehicle.get_velocity()
     velocity_vector = np.array([velocity.x, velocity.y])
-    velocity_magnitude = np.linalg.norm(velocity_vector)
-    
-    # If vehicle is not moving, no direction reward
-    if velocity_magnitude < 0.1:  # Threshold to consider vehicle as stationary
-        return 0.0
     
     # Normalize velocity vector
-    velocity_direction = velocity_vector / velocity_magnitude
+    velocity_direction = velocity_vector / target_speed
     
     # Get current and next waypoint
     current_waypoint = waypoints[current_waypoint_idx]
@@ -271,11 +266,8 @@ def calculate_path_reward(vehicle, waypoints, current_waypoint_idx, waypoint_thr
     # Calculate dot product between velocity direction and path direction
     # This gives the cosine of the angle between the two vectors
     # 1.0 = perfectly aligned, 0.0 = perpendicular, -1.0 = opposite direction
-    alignment = np.dot(velocity_direction, path_direction)
-    
-    # Scale the reward to emphasize alignment
-    # This gives a higher reward for alignment and a penalty for going in the wrong direction
-    path_reward = alignment * (velocity_magnitude / target_speed)
+    path_reward = np.dot(velocity_direction, path_direction)
+
 
     # Add waypoint reaching bonus
     if waypoints and current_waypoint_idx < len(waypoints):

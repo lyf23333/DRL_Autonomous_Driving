@@ -2,7 +2,8 @@ from stable_baselines3 import PPO, SAC, DDPG, DQN
 import numpy as np
 import os
 from typing import Type, Optional
-
+from torch.utils.tensorboard import SummaryWriter
+import time
 
 
 class DRLAgent:
@@ -14,6 +15,11 @@ class DRLAgent:
         self.models_dir = os.path.join("models", self.algorithm)
         os.makedirs(self.models_dir, exist_ok=True)
         
+        # Set up tensorboard
+        self.tensorboard_log = "./tensorboard/"
+        os.makedirs(self.tensorboard_log, exist_ok=True)
+        self.tb_writer = None
+        
         # Initialize the appropriate algorithm
         self.model = self._create_model()
         
@@ -24,7 +30,7 @@ class DRLAgent:
                 "MultiInputPolicy",
                 self.env,
                 verbose=1,
-                tensorboard_log="./tensorboard/",
+                tensorboard_log=self.tensorboard_log,
                 n_epochs=5,
                 n_steps=512,
             )
@@ -33,21 +39,21 @@ class DRLAgent:
                 "MultiInputPolicy",
                 self.env,
                 verbose=1,
-                tensorboard_log="./tensorboard/"
+                tensorboard_log=self.tensorboard_log
             )
         elif self.algorithm == 'ddpg':
             return DDPG(
                 "MultiInputPolicy",
                 self.env,
                 verbose=1,
-                tensorboard_log="./tensorboard/"
+                tensorboard_log=self.tensorboard_log
             )
         elif self.algorithm == 'dqn':
             return DQN(
                 "MultiInputPolicy",
                 self.env,
                 verbose=1,
-                tensorboard_log="./tensorboard/"
+                tensorboard_log=self.tensorboard_log
             )
         else:
             raise ValueError(f"Unsupported algorithm: {self.algorithm}")
@@ -57,9 +63,65 @@ class DRLAgent:
         # Set scenario in environment
         self.env.set_scenario(scenario, scenario_config)
         
+        # Initialize tensorboard writer
+        run_name = f"{self.algorithm}_{scenario.__class__.__name__}_{int(time.time())}"
+        self.tb_writer = SummaryWriter(os.path.join(self.tensorboard_log, run_name))
+        
+        # Custom callback function for logging
+        def custom_callback(locals, globals):
+            """Custom callback for logging during training"""
+            # Get current step
+            step = locals.get('self').num_timesteps
+            
+            # Get the current info
+            infos = locals.get('infos', [{}])
+            if len(infos) > 0:
+                info = infos[0]  # Get the first environment's info
+                
+                # Track episode reward accumulation
+                if locals.get('dones')[0]:
+                    # Calculate episode reward when episode ends
+                    episode_reward = locals.get('episode').get('r', 0)
+                    info['episode_reward'] = episode_reward
+                    
+                    # Log episode-level metrics
+                    self.tb_writer.add_scalar('Reward/episode_reward', episode_reward, step)
+                
+                # Always log step-level metrics
+                # Log trust level
+                self.tb_writer.add_scalar('Metrics/trust_level', info.get('trust_level', 0), step)
+                
+                # Log driving metrics
+                driving_metrics = info.get('driving_metrics', {})
+                for metric, value in driving_metrics.items():
+                    self.tb_writer.add_scalar(f'Metrics/{metric}', value, step)
+                    
+                # Log reward components
+                reward_components = info.get('reward_components', {})
+                for component, value in reward_components.items():
+                    self.tb_writer.add_scalar(f'Reward/component_{component}', value, step)
+                
+                # Log speed metrics
+                self.tb_writer.add_scalar('Metrics/current_speed', info.get('current_speed', 0), step)
+                self.tb_writer.add_scalar('Metrics/target_speed', info.get('target_speed', 0), step)
+                
+                # Log intervention data
+                self.tb_writer.add_scalar('Metrics/intervention_probability', 
+                                        info.get('intervention_probability', 0), step)
+                self.tb_writer.add_scalar('Metrics/intervention_active', 
+                                        1.0 if info.get('intervention_active', False) else 0.0, step)
+                
+                # Log waypoint progress
+                self.tb_writer.add_scalar('Metrics/current_waypoint_idx', 
+                                         info.get('current_waypoint_idx', 0), step)
+                self.tb_writer.add_scalar('Metrics/waypoints_remaining', 
+                                         info.get('waypoints_remaining', 0), step)
+                
+            return True
+            
         try:
-            # Start training
-            self.model.learn(total_timesteps=total_timesteps)
+            # Start training with custom callback
+            self.model.learn(total_timesteps=total_timesteps, callback=custom_callback)
             
             # Save the trained model
             model_path = os.path.join(
@@ -77,6 +139,11 @@ class DRLAgent:
             print("Training terminated early due to error.")
             
         finally:
+            # Close tensorboard writer
+            if self.tb_writer:
+                self.tb_writer.close()
+                self.tb_writer = None
+                
             # Cleanup scenario
             print("Cleaning up scenario resources...")
             if hasattr(self.env, 'active_scenario'):
@@ -89,33 +156,82 @@ class DRLAgent:
         scenario = scenario_class(self.env)
         self.env.set_scenario(scenario, scenario_config)
         
+        # Initialize tensorboard writer for evaluation
+        run_name = f"eval_{self.algorithm}_{scenario.__class__.__name__}_{int(time.time())}"
+        self.tb_writer = SummaryWriter(os.path.join(self.tensorboard_log, run_name))
+        step = 0
+        episode_step = 0
+        
         try:
             total_reward = 0
             trust_levels = []
             completion_rate = 0
             
             for episode in range(n_episodes):
-                obs = self.env.reset()
+                obs, info = self.env.reset()
                 done = False
+                truncated = False
                 episode_reward = 0
+                episode_step = 0
                 
-                while not done:
+                while not (done or truncated):
                     # Get action from model
                     action, _ = self.model.predict(obs, deterministic=True)
                     
                     # Execute action
-                    obs, reward, done, info = self.env.step(action)
+                    obs, reward, done, truncated, info = self.env.step(action)
                     
                     # Update metrics
                     episode_reward += reward
                     trust_levels.append(info['trust_level'])
                     
+                    # Log per-step metrics
+                    # Log trust level
+                    self.tb_writer.add_scalar('Metrics/trust_level', info.get('trust_level', 0), step)
+                    
+                    # Log driving metrics
+                    driving_metrics = info.get('driving_metrics', {})
+                    for metric, value in driving_metrics.items():
+                        self.tb_writer.add_scalar(f'Metrics/{metric}', value, step)
+                        
+                    # Log reward components
+                    reward_components = info.get('reward_components', {})
+                    for component, value in reward_components.items():
+                        self.tb_writer.add_scalar(f'Reward/component_{component}', value, step)
+                    
+                    # Log instant reward
+                    self.tb_writer.add_scalar('Reward/instant_reward', reward, step)
+                    
+                    # Log speed metrics
+                    self.tb_writer.add_scalar('Metrics/current_speed', info.get('current_speed', 0), step)
+                    self.tb_writer.add_scalar('Metrics/target_speed', info.get('target_speed', 0), step)
+                    
+                    # Log intervention data
+                    self.tb_writer.add_scalar('Metrics/intervention_probability', 
+                                             info.get('intervention_probability', 0), step)
+                    self.tb_writer.add_scalar('Metrics/intervention_active', 
+                                             1.0 if info.get('intervention_active', False) else 0.0, step)
+                    
+                    # Log waypoint progress
+                    self.tb_writer.add_scalar('Metrics/current_waypoint_idx', 
+                                             info.get('current_waypoint_idx', 0), step)
+                    self.tb_writer.add_scalar('Metrics/waypoints_remaining', 
+                                             info.get('waypoints_remaining', 0), step)
+                    
+                    # Increment steps
+                    step += 1
+                    episode_step += 1
+                    
                     # Check scenario completion
                     if info.get('scenario_complete', False):
                         completion_rate += 1
                 
+                # Log episode-level metrics
+                self.tb_writer.add_scalar('Reward/episode_reward', episode_reward, episode)
+                self.tb_writer.add_scalar('Metrics/episode_length', episode_step, episode)
+                
                 total_reward += episode_reward
-                print(f"Episode {episode + 1}/{n_episodes}: Reward = {episode_reward:.2f}")
+                print(f"Episode {episode + 1}/{n_episodes}: Reward = {episode_reward:.2f}, Steps = {episode_step}")
             
             # Print evaluation results
             print("\nEvaluation Results:")
@@ -131,6 +247,11 @@ class DRLAgent:
             print("Evaluation terminated early due to error.")
             
         finally:
+            # Close tensorboard writer
+            if self.tb_writer:
+                self.tb_writer.close()
+                self.tb_writer = None
+                
             # Cleanup scenario
             print("Cleaning up scenario resources...")
             if hasattr(self.env, 'active_scenario'):
