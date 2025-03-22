@@ -30,6 +30,16 @@ def parse_args():
                       help='Evaluate the agent')
     parser.add_argument('--render', action='store_true',
                       help='Rendering mode')
+    parser.add_argument('--timesteps', type=int, default=100000,
+                      help='Total timesteps for training')
+    
+    # Model loading and checkpointing options
+    parser.add_argument('--load-model', type=str, default=None,
+                      help='Path to a trained model to load')
+    parser.add_argument('--checkpoint-freq', type=int, default=100000,
+                      help='Save checkpoint every N timesteps')
+    parser.add_argument('--resume-training', action='store_true',
+                      help='Resume training from the loaded model')
     
     # CARLA server options
     parser.add_argument('--start-carla', action='store_true',
@@ -90,6 +100,11 @@ def main():
         algorithm=args.algorithm,
     )
     
+    # Load a pre-trained model if specified
+    if args.load_model:
+        print(f"Loading model from {args.load_model}")
+        agent.load(args.load_model)
+    
     # Load appropriate scenario
     scenario_map = {
         'lane_switching': LaneSwitchingScenario,
@@ -107,11 +122,19 @@ def main():
     
     try:
         if args.train:
+            # Set checkpoint frequency if provided
+            agent.checkpoint_freq = args.checkpoint_freq
+            
             # Training loop
-            agent.train(scenario)
+            if args.resume_training and args.load_model:
+                print(f"Resuming training from {args.load_model}")
+                # When resuming, we need to reset the environment with the loaded policy
+                env.reset()
+            
+            agent.train(scenario, total_timesteps=args.timesteps)
         elif args.eval:
             # Evaluation loop
-            agent.evaluate(scenario)
+            agent.evaluate(scenario_class, n_episodes=10)
         else:
             print("Please specify either --train or --eval")
             sys.exit(1)
