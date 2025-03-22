@@ -44,7 +44,9 @@
                 "--train",
                 "--render",
                 "--start-carla",
-                "--quality=Low"
+                "--quality=Low",
+                "--run-name=test",
+                "--timesteps=200000"
             ],
             "console": "integratedTerminal",
             "justMyCode": true

@@ -32,6 +32,8 @@ def parse_args():
                       help='Rendering mode')
     parser.add_argument('--timesteps', type=int, default=100000,
                       help='Total timesteps for training')
+    parser.add_argument('--run-name', type=str, default=None,
+                      help='Custom name for this run, used in saved files and logs')
     
     # Model loading and checkpointing options
     parser.add_argument('--load-model', type=str, default=None,
@@ -131,10 +133,10 @@ def main():
                 # When resuming, we need to reset the environment with the loaded policy
                 env.reset()
             
-            agent.train(scenario, total_timesteps=args.timesteps)
+            agent.train(scenario, total_timesteps=args.timesteps, run_name=args.run_name)
         elif args.eval:
             # Evaluation loop
-            agent.evaluate(scenario_class, n_episodes=10)
+            agent.evaluate(scenario_class, n_episodes=10, run_name=args.run_name)
         else:
             print("Please specify either --train or --eval")
             sys.exit(1)

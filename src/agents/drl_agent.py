@@ -4,7 +4,7 @@ import os
 from typing import Type, Optional
 from torch.utils.tensorboard import SummaryWriter
 import time
-
+from datetime import datetime
 
 class DRLAgent:
     def __init__(self, env, algorithm='ppo'):
@@ -21,7 +21,7 @@ class DRLAgent:
         self.tb_writer = None
         
         # Default checkpoint frequency
-        self.checkpoint_freq = 100000  # Save every 100k timesteps
+        self.checkpoint_freq = 10000  # Save every 100k timesteps
         
         # Initialize the appropriate algorithm
         self.model = self._create_model()
@@ -61,13 +61,27 @@ class DRLAgent:
         else:
             raise ValueError(f"Unsupported algorithm: {self.algorithm}")
     
-    def train(self, scenario, total_timesteps=100000, scenario_config=None):
-        """Train the agent on a specific scenario"""
+    def train(self, scenario, total_timesteps=100000, scenario_config=None, run_name=None):
+        """Train the agent on a specific scenario
+        
+        Args:
+            scenario: The scenario to train on
+            total_timesteps: Total number of timesteps to train for
+            scenario_config: Optional configuration for the scenario
+            run_name: Custom name for this training run, used in saved files and logs
+        """
         # Set scenario in environment
         self.env.set_scenario(scenario, scenario_config)
         
+        # Generate a timestamp for unique identification
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")        
+        # Create run name with custom prefix if provided
+        if run_name:
+            run_name = f"{run_name}_{self.algorithm}_{scenario.__class__.__name__}_{timestamp}"
+        else:
+            run_name = f"{self.algorithm}_{scenario.__class__.__name__}_{timestamp}"
+        
         # Initialize tensorboard writer
-        run_name = f"{self.algorithm}_{scenario.__class__.__name__}_{int(time.time())}"
         self.tb_writer = SummaryWriter(os.path.join(self.tensorboard_log, run_name))
         
         # Create directory for checkpoints
@@ -84,7 +98,7 @@ class DRLAgent:
             if step > 0 and step % self.checkpoint_freq == 0:
                 checkpoint_path = os.path.join(
                     checkpoints_dir,
-                    f"{self.algorithm}_{scenario.__class__.__name__}_steps_{step}.zip"
+                    f"{run_name}_steps_{step}.zip"
                 )
                 self.model.save(checkpoint_path)
                 print(f"\nCheckpoint saved at step {step}: {checkpoint_path}\n")
@@ -142,7 +156,7 @@ class DRLAgent:
             # Save the trained model
             model_path = os.path.join(
                 self.models_dir,
-                f"{self.algorithm}_{scenario.__class__.__name__}.zip"
+                f"{run_name}.zip"
             )
             self.model.save(model_path)
             print(f"Model successfully saved to {model_path}")
@@ -166,14 +180,29 @@ class DRLAgent:
                 self.env.active_scenario.cleanup()
             print("Cleanup complete.")
     
-    def evaluate(self, scenario_class: Type, n_episodes=10, scenario_config=None):
-        """Evaluate the agent on a specific scenario"""
+    def evaluate(self, scenario_class: Type, n_episodes=10, scenario_config=None, run_name=None):
+        """Evaluate the agent on a specific scenario
+        
+        Args:
+            scenario_class: The scenario class to evaluate on
+            n_episodes: Number of episodes to evaluate
+            scenario_config: Optional configuration for the scenario
+            run_name: Custom name for this evaluation run, used in logs
+        """
         # Create and setup scenario
         scenario = scenario_class(self.env)
         self.env.set_scenario(scenario, scenario_config)
         
+        # Generate a timestamp for unique identification
+        timestamp = int(time.time())
+        
+        # Create run name with custom prefix if provided
+        if run_name:
+            run_name = f"eval_{run_name}_{self.algorithm}_{scenario.__class__.__name__}_{timestamp}"
+        else:
+            run_name = f"eval_{self.algorithm}_{scenario.__class__.__name__}_{timestamp}"
+        
         # Initialize tensorboard writer for evaluation
-        run_name = f"eval_{self.algorithm}_{scenario.__class__.__name__}_{int(time.time())}"
         self.tb_writer = SummaryWriter(os.path.join(self.tensorboard_log, run_name))
         step = 0
         episode_step = 0

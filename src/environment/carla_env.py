@@ -147,7 +147,7 @@ class CarlaEnv(gym.Env):
             
         # Process action through action manager - with trust-based adjustments
         adjusted_action, current_intervention_prob = self.action_manager.adjust_action_with_trust(
-            action, self.trust_interface, is_near_decision_point
+            action, self.trust_interface, is_near_decision_point, is_adjusting=False
         )
         
         # Generate CARLA vehicle control from processed action
