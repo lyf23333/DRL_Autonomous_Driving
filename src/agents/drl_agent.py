@@ -5,6 +5,7 @@ from typing import Type, Optional
 from torch.utils.tensorboard import SummaryWriter
 import time
 from datetime import datetime
+import math
 
 class DRLAgent:
     def __init__(self, env, algorithm='ppo'):
@@ -21,10 +22,51 @@ class DRLAgent:
         self.tb_writer = None
         
         # Default checkpoint frequency
-        self.checkpoint_freq = 10000  # Save every 100k timesteps
+        self.checkpoint_freq = 10000  # Save every 10k timesteps
+        
+        # Learning rate settings (defaults)
+        self.learning_rate = 3e-4
+        self.lr_schedule = 'constant'
+        self.lr_decay_factor = 0.1
         
         # Initialize the appropriate algorithm
         self.model = self._create_model()
+        
+    def _get_learning_rate_schedule(self, total_timesteps):
+        """Create a learning rate schedule function based on the specified schedule type"""
+        initial_lr = self.learning_rate
+        
+        if self.lr_schedule == 'constant':
+            # Constant learning rate
+            return lambda step: initial_lr
+            
+        elif self.lr_schedule == 'linear':
+            # Linear decay to 10% of initial learning rate
+            def linear_schedule(step):
+                fraction = 1.0 - (step / total_timesteps)
+                return initial_lr * max(0.1, fraction)
+            return linear_schedule
+            
+        elif self.lr_schedule == 'exponential':
+            # Exponential decay
+            decay_factor = self.lr_decay_factor
+            def exponential_schedule(step):
+                # Calculate step fraction (0 to 1)
+                fraction = step / total_timesteps
+                # Decay learning rate exponentially
+                return initial_lr * (decay_factor ** fraction)
+            return exponential_schedule
+            
+        elif self.lr_schedule == 'cosine':
+            # Cosine annealing
+            def cosine_schedule(step):
+                fraction = min(1.0, step / total_timesteps)
+                return initial_lr * 0.1 + 0.9 * initial_lr * (1 + math.cos(math.pi * fraction)) / 2
+            return cosine_schedule
+            
+        else:
+            # Default to constant if invalid schedule type
+            return lambda step: initial_lr
         
     def _create_model(self):
         """Create the DRL model based on specified algorithm"""
@@ -34,30 +76,49 @@ class DRLAgent:
                 self.env,
                 verbose=1,
                 tensorboard_log=self.tensorboard_log,
+                learning_rate=self.learning_rate,
             )
         elif self.algorithm == 'sac':
             return SAC(
                 "MultiInputPolicy",
                 self.env,
                 verbose=1,
-                tensorboard_log=self.tensorboard_log
+                tensorboard_log=self.tensorboard_log,
+                learning_rate=self.learning_rate,
             )
         elif self.algorithm == 'ddpg':
             return DDPG(
                 "MultiInputPolicy",
                 self.env,
                 verbose=1,
-                tensorboard_log=self.tensorboard_log
+                tensorboard_log=self.tensorboard_log,
+                learning_rate=self.learning_rate,
             )
         elif self.algorithm == 'dqn':
             return DQN(
                 "MultiInputPolicy",
                 self.env,
                 verbose=1,
-                tensorboard_log=self.tensorboard_log
+                tensorboard_log=self.tensorboard_log,
+                learning_rate=self.learning_rate,
             )
         else:
             raise ValueError(f"Unsupported algorithm: {self.algorithm}")
+    
+    def set_learning_rate_params(self, learning_rate, lr_schedule='constant', lr_decay_factor=0.1):
+        """Set learning rate and schedule parameters
+        
+        Args:
+            learning_rate: Initial learning rate
+            lr_schedule: Learning rate schedule type ('constant', 'linear', 'exponential', 'cosine')
+            lr_decay_factor: Factor for exponential decay
+        """
+        self.learning_rate = learning_rate
+        self.lr_schedule = lr_schedule
+        self.lr_decay_factor = lr_decay_factor
+        
+        # Recreate the model with the new learning rate settings
+        self.model = self._create_model()
     
     def train(self, scenario, total_timesteps=100000, scenario_config=None, run_name=None):
         """Train the agent on a specific scenario
@@ -86,11 +147,21 @@ class DRLAgent:
         checkpoints_dir = os.path.join(self.models_dir, "checkpoints", run_name)
         os.makedirs(checkpoints_dir, exist_ok=True)
         
+        # Set up learning rate schedule
+        lr_schedule = self._get_learning_rate_schedule(total_timesteps)
+        
         # Custom callback function for logging and checkpointing
         def custom_callback(locals, globals):
             """Custom callback for logging during training"""
             # Get current step
             step = locals.get('self').num_timesteps
+            
+            # Update learning rate based on schedule
+            if self.lr_schedule != 'constant':
+                new_lr = lr_schedule(step)
+                if hasattr(locals.get('self'), 'learning_rate'):
+                    locals.get('self').learning_rate = new_lr
+                self.tb_writer.add_scalar('train/learning_rate', new_lr, step)
             
             # Save checkpoint every checkpoint_freq steps
             if step > 0 and step % self.checkpoint_freq == 0:
@@ -109,7 +180,7 @@ class DRLAgent:
                 # Track episode reward accumulation
                 if locals.get('dones')[0]:
                     # Calculate episode reward when episode ends
-                    episode_reward = locals.get('rewards', 0)
+                    episode_reward = locals.get('episode').get('r', 0)
                     info['episode_reward'] = episode_reward
                     
                     # Log episode-level metrics
