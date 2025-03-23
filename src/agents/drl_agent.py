@@ -180,7 +180,7 @@ class DRLAgent:
                 # Track episode reward accumulation
                 if locals.get('dones')[0]:
                     # Calculate episode reward when episode ends
-                    episode_reward = locals.get('episode').get('r', 0)
+                    episode_reward = locals.get('rewards', 0)
                     info['episode_reward'] = episode_reward
                     
                     # Log episode-level metrics
