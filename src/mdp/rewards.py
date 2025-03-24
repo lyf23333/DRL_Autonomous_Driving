@@ -61,7 +61,7 @@ def calculate_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshol
     safety_reward = 0.0
     
     # Trust-based reward
-    trust_reward = 0.0
+    trust_reward = trust_interface.trust_level if trust_interface else 0.5
     
     # Intervention penalty
     intervention_penalty = 0.0

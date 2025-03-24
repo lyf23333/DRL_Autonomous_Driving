@@ -483,3 +483,34 @@ class CarlaEnv(gym.Env):
                 
             # Limit the index to the available waypoints
             self.current_waypoint_idx = min(self.current_waypoint_idx, len(self.waypoints) - 1)
+
+        if self.current_waypoint_idx >= len(self.waypoints) - 1:
+            return
+        # Get current waypoint location
+        current_waypoint = self.waypoints[self.current_waypoint_idx]
+        next_waypoint = self.waypoints[self.current_waypoint_idx + 1]
+
+        vehicle_to_current_waypoint_vector = np.array([
+            current_waypoint.transform.location.x - vehicle_location.x,
+            current_waypoint.transform.location.y - vehicle_location.y
+        ])
+
+        current_waypoint_to_next_waypoint_direction_vector = np.array([
+            next_waypoint.transform.location.x - current_waypoint.transform.location.x,
+            next_waypoint.transform.location.y - current_waypoint.transform.location.y
+        ])
+
+        
+        # Normalize vectors
+        vehicle_to_current_waypoint_vector = vehicle_to_current_waypoint_vector / np.linalg.norm(vehicle_to_current_waypoint_vector)
+        current_waypoint_to_next_waypoint_direction_vector = current_waypoint_to_next_waypoint_direction_vector / np.linalg.norm(current_waypoint_to_next_waypoint_direction_vector)
+        dot_product = np.dot(vehicle_to_current_waypoint_vector, current_waypoint_to_next_waypoint_direction_vector)
+        
+        angle = np.arccos(dot_product)
+
+        if angle > math.pi / 2:
+            self.current_waypoint_idx += 1
+            print(f"Waypoint skipped due to large angle ({math.degrees(angle):.1f}° > {math.degrees(math.pi / 2):.1f}°)")
+            
+            # Limit the index to the available waypoints
+            self.current_waypoint_idx = min(self.current_waypoint_idx, len(self.waypoints) - 1)
