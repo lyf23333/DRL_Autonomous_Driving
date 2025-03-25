@@ -6,7 +6,7 @@
 
 # Set common parameters
 SCENARIO="urban_traffic"  # Options: lane_switching, urban_traffic, obstacle_avoidance
-TIMESTEPS=1000           # Total timesteps for training
+TIMESTEPS=600000           # Total timesteps for training
 TOWN="Town01"              # CARLA town to use
 LR=0.0003                  # Learning rate (3e-4)
 LR_SCHEDULE="exponential"  # Learning rate schedule
@@ -61,6 +61,7 @@ run_algorithm() {
     
     # Wait a bit to ensure resources are released
     echo "Waiting 10 seconds before starting next algorithm..."
+    pkill -f "CarlaUE4"
     sleep 10
 }
 
