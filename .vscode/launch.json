@@ -44,7 +44,25 @@
                 "--train",
                 "--render",
                 "--start-carla",
-                "--quality=Low"
+                "--quality=Low",
+                "--run-name=test",
+                "--timesteps=200000"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "play ppo urban traffic",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "args": [
+                "--scenario=urban_traffic",
+                "--algorithm=sac",
+                "--eval",
+                "--load-model=models/sac/checkpoints/town01_few_obstacles_no_radar_observation_trust_reward_sac_UrbanTrafficScenario_2025-03-24_08-24-17/town01_few_obstacles_no_radar_observation_trust_reward_sac_UrbanTrafficScenario_2025-03-24_08-24-17_steps_400000.zip",
+                "--render",
+                "--start-carla",
             ],
             "console": "integratedTerminal",
             "justMyCode": true

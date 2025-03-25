@@ -59,25 +59,12 @@ def calculate_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshol
     
     # Safety reward components
     safety_reward = 0.0
-    if scenario:
-        danger_threshold = 5.0  # meters
-        min_distance = float('inf')
-        ego_location = vehicle.get_location()
-        
-        vehicles = world.get_actors().filter('vehicle.*')
-        for vehicle in vehicles:
-            if vehicle.id != vehicle.id:
-                distance = ego_location.distance(vehicle.get_location())
-                min_distance = min(min_distance, distance)
-        
-        if min_distance < danger_threshold:
-            safety_reward = -1.0 * (1.0 - min_distance / danger_threshold)
     
     # Trust-based reward
     trust_reward = trust_interface.trust_level if trust_interface else 0.5
     
     # Intervention penalty
-    intervention_penalty = -1.0 if (trust_interface and trust_interface.intervention_active) else 0.0
+    intervention_penalty = 0.0
     
     # Store reward components for visualization
     reward_components['path'] = path_reward

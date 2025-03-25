@@ -32,6 +32,15 @@ def parse_args():
                       help='Rendering mode')
     parser.add_argument('--timesteps', type=int, default=100000,
                       help='Total timesteps for training')
+    parser.add_argument('--run-name', type=str, default=None,
+                      help='Custom name for this run, used in saved files and logs')
+    parser.add_argument('--learning-rate', type=float, default=3e-4,
+                      help='Initial learning rate')
+    parser.add_argument('--lr-schedule', type=str, default='exponential',
+                      choices=['constant', 'linear', 'exponential', 'cosine'],
+                      help='Learning rate schedule')
+    parser.add_argument('--lr-decay-factor', type=float, default=0.1,
+                      help='Factor by which to decay learning rate (for exponential)')
     
     # Model loading and checkpointing options
     parser.add_argument('--load-model', type=str, default=None,
@@ -100,6 +109,13 @@ def main():
         algorithm=args.algorithm,
     )
     
+    # Set learning rate parameters
+    agent.set_learning_rate_params(
+        learning_rate=args.learning_rate,
+        lr_schedule=args.lr_schedule,
+        lr_decay_factor=args.lr_decay_factor
+    )
+    
     # Load a pre-trained model if specified
     if args.load_model:
         print(f"Loading model from {args.load_model}")
@@ -131,10 +147,10 @@ def main():
                 # When resuming, we need to reset the environment with the loaded policy
                 env.reset()
             
-            agent.train(scenario, total_timesteps=args.timesteps)
+            agent.train(scenario, total_timesteps=args.timesteps, run_name=args.run_name)
         elif args.eval:
             # Evaluation loop
-            agent.evaluate(scenario_class, n_episodes=10)
+            agent.evaluate(scenario_class, n_episodes=10, run_name=args.run_name)
         else:
             print("Please specify either --train or --eval")
             sys.exit(1)

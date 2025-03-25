@@ -10,7 +10,7 @@ class CarlaEnvDiscrete(CarlaEnv):
     This makes it compatible with algorithms like DQN that require discrete actions.
     """
     
-    def __init__(self, town='Town01', port=2000, trust_interface=None, render_mode=None, 
+    def __init__(self, trust_interface, config,
                  steering_levels=5, throttle_brake_levels=3):
         """
         Initialize the discrete action space environment.
@@ -24,9 +24,7 @@ class CarlaEnvDiscrete(CarlaEnv):
             throttle_brake_levels: Number of discrete throttle/brake levels
         """
         # Initialize the parent class
-        super(CarlaEnvDiscrete, self).__init__(town=town, port=port, 
-                                              trust_interface=trust_interface, 
-                                              render_mode=render_mode)
+        super(CarlaEnvDiscrete, self).__init__( trust_interface=trust_interface, config=config)
         
         # Define discrete action space parameters
         self.steering_levels = steering_levels

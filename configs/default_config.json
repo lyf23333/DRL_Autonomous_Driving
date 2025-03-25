@@ -29,11 +29,11 @@
     "radar_range": 20.0,
     "max_detectable_vehicles": 3,
     "reward_weights": {
-        "path": 4.0,
-        "progress": 1.0,
-        "safety": 1.5,
-        "comfort": 0.5,
-        "trust": 0.5,
-        "intervention": -1.0
+        "path": 0.4,
+        "progress": 0.1,
+        "safety": 0.15,
+        "comfort": 0.05,
+        "trust": 0.05,
+        "intervention": -0.1
     }
 } 

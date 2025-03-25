@@ -131,7 +131,7 @@ class CarlaServerManager:
         
         # Add town parameter if specified
         if town:
-            cmd.append(f"-carla-world={town}")
+            cmd.append(town)
         
         # Add quality setting
         if quality.lower() == "low":
