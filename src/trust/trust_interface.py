@@ -332,14 +332,31 @@ class TrustInterface:
             return False 
 
     def reset(self):
-        """Reset the trust interface to initial state"""
+        """Reset the trust interface"""
+        # Reset trust level to initial value
         self.trust_level = 0.75
+        
+        # Reset intervention flags
+        self.intervention_active = False
+        
+        # Clear intervention history
+        self.manual_interventions = []
+        self.intervention_timestamps = []
+        self.last_intervention_time = 0.0
+        
+        # Clear intervention type history
+        for key in self.intervention_types:
+            self.intervention_types[key] = []
+        
+        # Reset driving metrics
         self.driving_metrics = {
-            'steering_stability': 1.0,  # 0.0 (unstable) to 1.0 (stable)
-            'acceleration_smoothness': 1.0,  # 0.0 (jerky) to 1.0 (smooth)
-            'braking_smoothness': 1.0,  # 0.0 (abrupt) to 1.0 (smooth)
-            'hesitation_level': 0.0,    # 0.0 (confident) to 1.0 (hesitant)
+            'steering_stability': 1.0,
+            'acceleration_smoothness': 1.0,
+            'braking_smoothness': 1.0,
+            'hesitation_level': 0.0,
         }
+        
+        # Reset behavior adjustment
         self.behavior_adjustment = {
             'trust_level': 0.75,
             'stability_factor': 1.0,
@@ -347,6 +364,19 @@ class TrustInterface:
             'hesitation_factor': 1.0
         }
         
+        # Reset history buffers
+        self.acceleration_history = []
+        self.steering_history = []
+        
+        # Reset last recorded state
+        self.last_speed = 0.0
+        self.last_steering = 0.0
+        self.last_update_time = 0.0
+        self.hesitation_start_time = None
+        self.near_decision_point = False
+        
+        # Reset episode intervention counter
+        self.episode_intervention_count = 0
 
     def update_behavior_adjustment(self):
         """Update behavior adjustment parameters based on trust level and driving metrics"""
@@ -461,3 +491,29 @@ class TrustInterface:
             self.screen.blit(text_surface, (x + 410, y + i * 25))
         
         pygame.display.flip()
+
+    def get_intervention_count(self):
+        """Get the total number of interventions in the current episode"""
+        if not hasattr(self, 'episode_intervention_count'):
+            self.episode_intervention_count = 0
+        return self.episode_intervention_count
+        
+    def record_intervention(self, intervention_type='brake'):
+        """Record an intervention of a specific type
+        
+        Args:
+            intervention_type: Type of intervention ('brake', 'steer', or 'hesitation')
+        """
+        # Add to specific intervention type history
+        if intervention_type in self.intervention_types:
+            current_time = self.world.get_snapshot().timestamp.elapsed_seconds
+            self.intervention_types[intervention_type].append(current_time)
+        
+        # Add to general intervention history
+        self.manual_interventions.append(1.0)  # Placeholder for intervention magnitude
+        self.intervention_timestamps.append(self.world.get_snapshot().timestamp.elapsed_seconds)
+        
+        # Track intervention count for the episode
+        if not hasattr(self, 'episode_intervention_count'):
+            self.episode_intervention_count = 0
+        self.episode_intervention_count += 1

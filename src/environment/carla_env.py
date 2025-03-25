@@ -251,7 +251,26 @@ class CarlaEnv(gym.Env):
             'is_near_decision_point': is_near_decision_point,
             'behavior_adjustment': self.trust_interface.behavior_adjustment,
             'intervention_probability': current_intervention_prob,
-            'intervention_active': self.trust_interface.intervention_active
+            'intervention_active': self.trust_interface.intervention_active,
+            # Add current waypoint info
+            'current_waypoint_idx': self.current_waypoint_idx,
+            'waypoints_total': len(self.waypoints),
+            'waypoints_remaining': len(self.waypoints) - self.current_waypoint_idx,
+            # Add reward components
+            'reward_components': self.reward_components,
+            # Add episode tracking metrics
+            'episode_reward': self.episode_reward,
+            'episode_steps': self.step_count,
+            # Add collision detection
+            'collision_detected': self.sensor_manager.collision_detected,
+            # Add traffic violation tracking (placeholder - to be implemented)
+            'traffic_violation': False,  # Replace with actual traffic violation detection
+            # Calculate episode intervention metrics
+            'episode_intervention_count': self.trust_interface.get_intervention_count(),
+            # Calculate waypoint deviation
+            'waypoint_deviation': self._calculate_waypoint_deviation() if self.waypoints and self.current_waypoint_idx < len(self.waypoints) else 0.0,
+            # Add engagement duration tracking
+            'engagement_duration': self._calculate_engagement_duration() if hasattr(self, '_last_intervention_step') else 0
         }
 
         self.step_count += 1
@@ -514,3 +533,63 @@ class CarlaEnv(gym.Env):
             
             # Limit the index to the available waypoints
             self.current_waypoint_idx = min(self.current_waypoint_idx, len(self.waypoints) - 1)
+
+    def _calculate_waypoint_deviation(self):
+        """Calculate the deviation from the optimal path"""
+        if not self.waypoints or not self.vehicle:
+            return 0.0
+            
+        # Get vehicle location
+        vehicle_location = self.vehicle.get_location()
+        
+        # Get current waypoint and next waypoint locations
+        current_wp_idx = min(self.current_waypoint_idx, len(self.waypoints) - 1)
+        current_waypoint = self.waypoints[current_wp_idx]
+        current_wp_loc = current_waypoint.transform.location
+        
+        # If we're at the last waypoint, just return distance to it
+        if current_wp_idx >= len(self.waypoints) - 1:
+            return math.sqrt(
+                (vehicle_location.x - current_wp_loc.x) ** 2 +
+                (vehicle_location.y - current_wp_loc.y) ** 2
+            )
+        
+        # Get next waypoint
+        next_waypoint = self.waypoints[current_wp_idx + 1]
+        next_wp_loc = next_waypoint.transform.location
+        
+        # Calculate vectors
+        wp_to_next_wp = np.array([next_wp_loc.x - current_wp_loc.x, next_wp_loc.y - current_wp_loc.y])
+        wp_to_vehicle = np.array([vehicle_location.x - current_wp_loc.x, vehicle_location.y - current_wp_loc.y])
+        
+        # Normalize the path direction vector
+        path_length = np.linalg.norm(wp_to_next_wp)
+        if path_length < 0.001:
+            return np.linalg.norm(wp_to_vehicle)  # Just return direct distance if waypoints are too close
+            
+        path_direction = wp_to_next_wp / path_length
+        
+        # Calculate the projection of vehicle position onto the path
+        projection_length = np.dot(wp_to_vehicle, path_direction)
+        
+        # Calculate the lateral deviation (perpendicular distance to path)
+        lateral_vector = wp_to_vehicle - projection_length * path_direction
+        lateral_distance = np.linalg.norm(lateral_vector)
+        
+        return lateral_distance
+        
+    def _calculate_engagement_duration(self):
+        """Calculate the duration of current engagement (time since last intervention)"""
+        if not hasattr(self, '_last_intervention_step'):
+            self._last_intervention_step = 0
+            self._engagement_start_step = 0
+            
+        # If intervention is active, update last intervention step
+        if self.trust_interface.intervention_active:
+            if self._last_intervention_step < self.step_count - 1:
+                self._engagement_start_step = self.step_count
+            self._last_intervention_step = self.step_count
+            return 0
+        
+        # Return duration of current engagement
+        return self.step_count - self._engagement_start_step
