@@ -6,9 +6,8 @@ from torch.utils.tensorboard import SummaryWriter
 import time
 from datetime import datetime
 import math
-
 class DRLAgent:
-    def __init__(self, env, algorithm='ppo'):
+    def __init__(self, env, algorithm='ppo', total_timesteps=100000):
         self.env = env
         self.algorithm = algorithm.lower()
         
@@ -30,7 +29,7 @@ class DRLAgent:
         self.lr_decay_factor = 0.1
         
         # Initialize the appropriate algorithm
-        self.model = self._create_model()
+        self.model = self._create_model(total_timesteps)
         
     def _get_learning_rate_schedule(self, total_timesteps):
         """Create a learning rate schedule function based on the specified schedule type"""
@@ -68,15 +67,16 @@ class DRLAgent:
             # Default to constant if invalid schedule type
             return lambda step: initial_lr
         
-    def _create_model(self):
+    def _create_model(self, total_timesteps):
         """Create the DRL model based on specified algorithm"""
+        sched_LR = self._get_learning_rate_schedule(total_timesteps) # learning_rate = sched_LR.value
         if self.algorithm == 'ppo':
             return PPO(
                 "MultiInputPolicy",
                 self.env,
                 verbose=1,
                 tensorboard_log=self.tensorboard_log,
-                learning_rate=self.learning_rate,
+                learning_rate=sched_LR.value,
             )
         elif self.algorithm == 'sac':
             return SAC(
@@ -84,7 +84,7 @@ class DRLAgent:
                 self.env,
                 verbose=1,
                 tensorboard_log=self.tensorboard_log,
-                learning_rate=self.learning_rate,
+                learning_rate=sched_LR.value,
             )
         elif self.algorithm == 'ddpg':
             return DDPG(
@@ -92,7 +92,7 @@ class DRLAgent:
                 self.env,
                 verbose=1,
                 tensorboard_log=self.tensorboard_log,
-                learning_rate=self.learning_rate,
+                learning_rate=sched_LR.value,
             )
         elif self.algorithm == 'dqn':
             return DQN(
@@ -100,7 +100,7 @@ class DRLAgent:
                 self.env,
                 verbose=1,
                 tensorboard_log=self.tensorboard_log,
-                learning_rate=self.learning_rate,
+                learning_rate=sched_LR.value,
             )
         else:
             raise ValueError(f"Unsupported algorithm: {self.algorithm}")
@@ -320,7 +320,7 @@ class DRLAgent:
                 print(f"Total Episodes: {episode_count}")
                 print(f"Average Episode Reward: {sum(episode_rewards) / episode_count:.2f}")
                 print(f"Total Manual Interventions: {total_interventions}")
-                print(f"Intervention Rate: {total_interventions / max(1, sum(info.get('episode_steps', 0) for info in episode_rewards)):.4f}")
+                # print(f"Intervention Rate: {total_interventions / max(1, sum(info.get('episode_steps', 0) for info in episode_rewards)):.4f}")
                 print(f"Crash Rate: {total_crashes / episode_count:.4f}")
                 print(f"Traffic Violation Rate: {total_traffic_violations / episode_count:.4f}")
                 
