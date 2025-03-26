@@ -107,6 +107,7 @@ def main():
     agent = DRLAgent(
         env=env,
         algorithm=args.algorithm,
+        total_timesteps=args.timesteps
     )
     
     # Set learning rate parameters
