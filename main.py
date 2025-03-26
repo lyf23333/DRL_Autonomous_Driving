@@ -117,6 +117,13 @@ def main():
         lr_decay_factor=args.lr_decay_factor
     )
     
+    # Set learning rate parameters
+    agent.set_learning_rate_params(
+        learning_rate=args.learning_rate,
+        lr_schedule=args.lr_schedule,
+        lr_decay_factor=args.lr_decay_factor
+    )
+    
     # Load a pre-trained model if specified
     if args.load_model:
         print(f"Loading model from {args.load_model}")
