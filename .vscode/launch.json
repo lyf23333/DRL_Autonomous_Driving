@@ -45,6 +45,7 @@
                 "--render",
                 "--start-carla",
                 "--quality=Low",
+                "--offscreen",
                 "--run-name=test",
                 "--timesteps=200000"
             ],

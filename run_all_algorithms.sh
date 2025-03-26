@@ -6,7 +6,7 @@
 
 # Set common parameters
 SCENARIO="urban_traffic"  # Options: lane_switching, urban_traffic, obstacle_avoidance
-TIMESTEPS=1000000           # Total timesteps for training
+TIMESTEPS=500000           # Total timesteps for training
 TOWN="Town01"              # CARLA town to use
 LR=0.0003                  # Learning rate (3e-4)
 LR_SCHEDULE="exponential"  # Learning rate schedule
@@ -71,8 +71,8 @@ echo "Starting sequential training of all algorithms"
 echo "Timestamp: $TIMESTAMP"
 
 # Run each algorithm in sequence
-# run_algorithm "ppo"
 run_algorithm "sac"
+run_algorithm "ppo"
 run_algorithm "ddpg"
 run_algorithm "dqn"
 
