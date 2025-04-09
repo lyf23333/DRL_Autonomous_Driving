@@ -320,7 +320,7 @@ class DRLAgent:
                 print(f"Total Episodes: {episode_count}")
                 print(f"Average Episode Reward: {sum(episode_rewards) / episode_count:.2f}")
                 print(f"Total Manual Interventions: {total_interventions}")
-                print(f"Intervention Rate: {total_interventions / max(1, sum(info.get('episode_steps', 0) for info in episode_rewards)):.4f}")
+                # print(f"Intervention Rate: {total_interventions / max(1, sum(info.get('episode_steps', 0) for info in episode_rewards)):.4f}")
                 print(f"Crash Rate: {total_crashes / episode_count:.4f}")
                 print(f"Traffic Violation Rate: {total_traffic_violations / episode_count:.4f}")
                 
