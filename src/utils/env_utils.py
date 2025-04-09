@@ -214,7 +214,7 @@ def calculate_path_reward(vehicle, waypoints, current_waypoint_idx, waypoint_thr
     velocity_vector = np.array([velocity.x, velocity.y])
     
     # Normalize velocity vector
-    velocity_direction = velocity_vector / target_speed
+    velocity_direction = velocity_vector / (target_speed / 3.6)
     
     # Get current and next waypoint
     current_waypoint = waypoints[current_waypoint_idx]
@@ -267,7 +267,7 @@ def calculate_path_reward(vehicle, waypoints, current_waypoint_idx, waypoint_thr
     # This gives the cosine of the angle between the two vectors
     # 1.0 = perfectly aligned, 0.0 = perpendicular, -1.0 = opposite direction
     path_reward = np.dot(velocity_direction, path_direction)
-
+    path_reward = np.clip(path_reward, -1.0, 1.0)
 
     # Add waypoint reaching bonus
     if waypoints and current_waypoint_idx < len(waypoints):
@@ -288,8 +288,8 @@ def calculate_path_reward(vehicle, waypoints, current_waypoint_idx, waypoint_thr
                 (ego_location.y - waypoints[current_waypoint_idx].y) ** 2
             )
         
-        # Additional reward for reaching waypoint
-        if distance < waypoint_threshold:
-            path_reward += 1.0
+        # # Additional reward for reaching waypoint
+        # if distance < waypoint_threshold:
+        #     path_reward += 1.0
     
     return path_reward
