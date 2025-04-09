@@ -288,8 +288,8 @@ def calculate_path_reward(vehicle, waypoints, current_waypoint_idx, waypoint_thr
                 (ego_location.y - waypoints[current_waypoint_idx].y) ** 2
             )
         
-        # # Additional reward for reaching waypoint
-        # if distance < waypoint_threshold:
-        #     path_reward += 1.0
+        # Additional reward for reaching waypoint
+        if distance < waypoint_threshold:
+            path_reward += 1.0
     
     return path_reward
