@@ -338,7 +338,7 @@ class CarlaEnv(gym.Env):
         self.sensor_manager.set_vehicle(self.vehicle)
         
         # Generate random waypoints for the new vehicle position
-        self.waypoints, self.current_waypoint_idx = generate_random_waypoints(self.vehicle, self.world, self.path_length)
+        self.waypoints, self.current_waypoint_idx = generate_random_waypoints(self.vehicle, self.world, self.config.path_length)
         
         # Setup active scenario if exists
         if self.active_scenario and not self.active_scenario.is_setup:
