@@ -269,6 +269,10 @@ def calculate_path_reward(vehicle, waypoints, current_waypoint_idx, waypoint_thr
     path_reward = np.dot(velocity_direction, path_direction)
     path_reward = np.clip(path_reward, -1.0, 1.0)
 
+    current_speed = 3.6 * np.sqrt(velocity.x**2 + velocity.y**2)  # km/h
+    if current_speed > 1.1 * target_speed:
+        path_reward = 0.0
+
     # Add waypoint reaching bonus
     if waypoints and current_waypoint_idx < len(waypoints):
         ego_location = vehicle.get_location()
