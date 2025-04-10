@@ -168,9 +168,12 @@ class SensorManager:
         if self.vehicle is None:
             return
             
-        # When a new frame comes in from a specific radar, clear previous points from that radar
-        # Filter out points from other radars
-        self.radar_points = [p for p in self.radar_points if p['radar_idx'] != radar_idx]
+        # When a new frame comes in from a specific radar, remove outdated points from that radar
+        # But don't clear all points from that radar at once - this causes jumps
+        current_frame = self.world.get_snapshot().frame
+        self.radar_points = [p for p in self.radar_points if 
+                           p['radar_idx'] != radar_idx or 
+                           (current_frame - p.get('timestamp', 0) < 5)]  # Keep recent points
         
         # Convert radar angle to radians
         radar_angle_rad = np.radians(radar_angle)
@@ -187,7 +190,7 @@ class SensorManager:
                 continue
                 
             # 2. Filter out points with low intensity (increased threshold)
-            if hasattr(detection, 'intensity') and detection.intensity < 0.2:  # Increased from 0.1 to 0.2
+            if hasattr(detection, 'intensity') and detection.intensity < 0.3:  # More aggressive filtering
                 continue
                 
             # 3. Calculate adjusted azimuth (angle)
@@ -202,12 +205,11 @@ class SensorManager:
                 continue
                 
             # 6. Filter out points with extreme altitude angles (likely ground or sky reflections)
-            if abs(np.degrees(detection.altitude)) > 10:  # Filter points with altitude > 10 degrees
+            if abs(np.degrees(detection.altitude)) > 8:  # Stricter altitude filtering
                 continue
                 
-            # 7. Create a unique key for this approximate spatial location (rounded to 0.5m grid)
-            # This helps track the same physical object across frames
-            grid_size = 0.5  # 0.5 meter grid
+            # 7. Create a unique key for this approximate spatial location (rounded to 1.0m grid for broader grouping)
+            grid_size = 1.0  # Increased grid size for better clustering
             location_key = f"{int(x/grid_size)},{int(y/grid_size)}"
             
             # 8. Store essential data
@@ -217,68 +219,75 @@ class SensorManager:
                 'velocity': float(detection.velocity),
                 'radar_idx': int(radar_idx),
                 'location_key': location_key,
-                'timestamp': self.world.get_snapshot().frame  # Track when this point was last seen
+                'timestamp': current_frame  # Track when this point was last seen
             }
             
             # Add to the temporary list of new points
             new_radar_points.append(point)
             
-            # Update the history for this location
+            # Update the history for this location - with exponential moving average for stability
             if location_key not in self.radar_points_history:
                 self.radar_points_history[location_key] = {
                     'points': [point],
                     'count': 1,
-                    'last_seen': self.world.get_snapshot().frame
+                    'last_seen': current_frame,
+                    'avg_x': x,
+                    'avg_y': y,
+                    'avg_velocity': detection.velocity
                 }
             else:
                 history = self.radar_points_history[location_key]
+                
+                # Update exponential moving averages (EMA) with alpha=0.3
+                # This gives more weight to historical values, making it smoother
+                alpha = 0.3
+                history['avg_x'] = alpha * x + (1 - alpha) * history['avg_x']
+                history['avg_y'] = alpha * y + (1 - alpha) * history['avg_y']
+                history['avg_velocity'] = alpha * detection.velocity + (1 - alpha) * history['avg_velocity']
+                
+                # Update history
                 history['points'].append(point)
                 history['count'] += 1
-                history['last_seen'] = self.world.get_snapshot().frame
+                history['last_seen'] = current_frame
                 
-                # Keep only the last 5 observations for this location
-                if len(history['points']) > 5:
-                    history['points'] = history['points'][-5:]
+                # Keep only the most recent observations for this location
+                if len(history['points']) > 10:  # Track more history points
+                    history['points'] = history['points'][-10:]
         
-        # Apply temporal filtering - only keep points that have been seen multiple times
-        # or are very recent (just detected)
+        # Apply smarter temporal filtering with different levels of stability
         stable_points = []
+        
         for point in new_radar_points:
             history = self.radar_points_history[point['location_key']]
             
-            # Accept points that have been seen multiple times (stable)
-            if history['count'] >= 3:
-                # Use averaged position from history for more stability
-                recent_points = history['points'][-3:]  # Last 3 observations
-                avg_x = sum(p['x'] for p in recent_points) / len(recent_points)
-                avg_y = sum(p['y'] for p in recent_points) / len(recent_points)
-                avg_velocity = sum(p['velocity'] for p in recent_points) / len(recent_points)
-                
-                # Create a stabilized point
-                stable_point = {
-                    'x': float(avg_x),
-                    'y': float(avg_y),
-                    'velocity': float(avg_velocity),
-                    'radar_idx': point['radar_idx'],
-                    'is_stable': True  # Mark as a stable point
-                }
-                stable_points.append(stable_point)
-            # Also accept very new points (first few detections)
-            elif history['count'] <= 2:
-                point['is_stable'] = False  # Mark as not yet stable
-                stable_points.append(point)
+            # Higher count = more confidence = more stability
+            stability_level = min(1.0, history['count'] / 10.0)  # Normalized to 0.0-1.0
+            
+            # Create a point with smoothed position
+            stable_point = {
+                'x': float(history['avg_x']),  # Use the EMA for smoother tracking
+                'y': float(history['avg_y']),
+                'velocity': float(history['avg_velocity']),
+                'radar_idx': point['radar_idx'],
+                'timestamp': current_frame,
+                'is_stable': history['count'] >= 3,  # Boolean flag for stability
+                'stability': stability_level,  # Continuous stability measure
+                'location_key': point['location_key']
+            }
+            
+            # Add the stable point - all points get added but with stability measure
+            stable_points.append(stable_point)
         
         # Add the stable points to our main radar points list
         self.radar_points.extend(stable_points)
         
         # Clean up old history entries (not seen recently)
-        current_frame = self.world.get_snapshot().frame
         keys_to_remove = []
         
         # Use a copy of the dictionary keys to avoid the "dictionary changed size during iteration" error
         for key in list(self.radar_points_history.keys()):
             history = self.radar_points_history[key]
-            if current_frame - history['last_seen'] > 10:  # Not seen for 10 frames
+            if current_frame - history['last_seen'] > 20:  # Increased persistence
                 keys_to_remove.append(key)
         
         for key in keys_to_remove:
@@ -301,8 +310,10 @@ class SensorManager:
         # If no radar data is available, return the default observation
         if not self.radar_points:
             return radar_obs.reshape(1, 360)  # Reshape to match expected dimensions
-            
-        # Process each point in the radar data
+        
+        # First pass: collect all points by angle
+        angle_data = {}
+        
         for point in self.radar_points:
             # Calculate angle and distance
             x, y = point['x'], point['y']
@@ -327,10 +338,53 @@ class SensorManager:
             angle_idx = int(angle_deg)
             if angle_idx >= 360:  # Handle edge case
                 angle_idx = 359
+            
+            # Store each point with its stability and distance
+            if angle_idx not in angle_data:
+                angle_data[angle_idx] = []
+            
+            stability = point.get('stability', 0.0)
+            is_stable = point.get('is_stable', False)
+            
+            angle_data[angle_idx].append({
+                'distance': distance,
+                'stability': stability,
+                'is_stable': is_stable
+            })
+        
+        # Second pass: for each angle, select the best point based on stability and distance
+        for angle_idx, points in angle_data.items():
+            if not points:
+                continue
                 
-            # Prioritize stable points and closer points
-            if radar_obs[angle_idx] > distance or ('is_stable' in point and point['is_stable']):
-                radar_obs[angle_idx] = distance
+            # Sort by stability (descending) and then by distance (ascending)
+            points.sort(key=lambda p: (-p['stability'], p['distance']))
+            
+            # Take the best point (most stable, or closest if equally stable)
+            best_point = points[0]
+            radar_obs[angle_idx] = best_point['distance']
+        
+        # Apply Gaussian smoothing to the radar observation to reduce noise
+        # Create a circular kernel for proper handling of the angle wrap-around
+        kernel_size = 5
+        sigma = 1.0
+        
+        # Create a copy for smoothing (to handle the circular nature of angles)
+        extended_obs = np.concatenate([radar_obs[-kernel_size:], radar_obs, radar_obs[:kernel_size]])
+        
+        # Create Gaussian kernel
+        kernel = np.exp(-np.linspace(-kernel_size, kernel_size, 2*kernel_size+1)**2 / (2*sigma**2))
+        kernel = kernel / np.sum(kernel)  # Normalize
+        
+        # Apply the filter
+        smoothed_extended = np.convolve(extended_obs, kernel, mode='same')
+        
+        # Extract the original part and handle special cases (max distance)
+        # Only smooth points that are not at max distance
+        for i in range(360):
+            idx = i + kernel_size
+            if radar_obs[i] < self.radar_max_distance:
+                radar_obs[i] = smoothed_extended[idx]
         
         # Reshape to match the expected dimensions (1 layer, 360 angles)
         return radar_obs.reshape(1, 360)

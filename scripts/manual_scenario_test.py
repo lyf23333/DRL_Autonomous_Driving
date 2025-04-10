@@ -14,6 +14,7 @@ from collections import deque
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.environment.carla_env import CarlaEnv
+from src.environment.carla_env_config import CarlaEnvConfig
 from src.trust.trust_interface import TrustInterface
 from scenarios.lane_switching import LaneSwitchingScenario
 from scenarios.urban_traffic import UrbanTrafficScenario
@@ -288,13 +289,17 @@ def main():
         'obstacle_avoidance': ObstacleAvoidanceScenario,
         'emergency_braking': EmergencyBrakingScenario
     }
+
+    # Initialize environment with configurable parameters
+    env_config = CarlaEnvConfig.from_json('configs/default_config.json')
+    env_config.town = args.town
+    env_config.port = args.port
+    env_config.render_mode = True
     
     # Initialize components
     env = CarlaEnv(
         trust_interface=TrustInterface(),
-        town=args.town,
-        port=args.port,
-        render_mode=True
+        config=env_config
     )
     
     # Create and run manual controller

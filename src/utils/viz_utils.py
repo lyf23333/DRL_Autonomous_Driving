@@ -39,13 +39,30 @@ def render_trust_visualization(screen, font, trust_interface, vehicle, camera_wi
         # Add target speed in a separate section with a different color
         target_text = font.render(f"Target: {target_speed:.1f} km/h", True, (255, 200, 0))  # Yellow color
         screen.blit(target_text, (400, camera_height + 10))
+        
+        # Add speed compliance metric on second line
+        if trust_interface and hasattr(trust_interface, 'driving_metrics') and 'speed_compliance' in trust_interface.driving_metrics:
+            speed_compliance = trust_interface.driving_metrics['speed_compliance']
+            
+            # Color based on compliance level (red to green)
+            compliance_color = (
+                int(255 * (1 - speed_compliance)), 
+                int(255 * speed_compliance), 
+                0
+            )
+            
+            compliance_text = font.render(f"Speed Compliance: {speed_compliance:.2f}", True, compliance_color)
+            screen.blit(compliance_text, (150, camera_height + 35))
+            
+            # Draw compliance visual indicator (colored dot)
+            pygame.draw.circle(screen, compliance_color, (130, camera_height + 40), 8)
     
     # Draw a separator line
     pygame.draw.line(
         screen, 
         (50, 50, 50), 
-        (0, camera_height + 30), 
-            (camera_width, camera_height + 30), 
+        (0, camera_height + 55), 
+        (camera_width, camera_height + 55), 
         1
     )
     
@@ -70,7 +87,7 @@ def render_trust_visualization(screen, font, trust_interface, vehicle, camera_wi
     
     # Calculate dimensions for reward components display
     components_left = 10
-    components_top = camera_height + 40  # Start below the separator
+    components_top = camera_height + 65  # Start below the separator
     component_height = 16  # Increased from 12
     component_spacing = 10  # Increased from 5
     label_width = 150
@@ -143,7 +160,7 @@ def render_trust_visualization(screen, font, trust_interface, vehicle, camera_wi
         # Graph dimensions - adjusted for row-based layout
         graph_left = 400
         graph_width = camera_width - graph_left - 10
-        graph_top = camera_height + 40  # Start below the separator
+        graph_top = camera_height + 65  # Start below the separator
         graph_height = 140  # Fixed shorter height for the graph
         
         # Draw title for trust graph
@@ -194,6 +211,28 @@ def render_trust_visualization(screen, font, trust_interface, vehicle, camera_wi
             current_trust = trust_history[-1]
             current_text = font.render(f"Current: {current_trust:.2f}", True, (255, 255, 255))
             screen.blit(current_text, (graph_left + graph_width - 120, graph_top - 20))
+            
+            # Draw speed compliance level as a horizontal line on the graph
+            if trust_interface and hasattr(trust_interface, 'driving_metrics') and 'speed_compliance' in trust_interface.driving_metrics:
+                compliance_value = trust_interface.driving_metrics['speed_compliance']
+                compliance_y = graph_top + graph_height - (compliance_value * graph_height)
+                
+                # Draw dashed horizontal line with compliance color
+                compliance_color = (0, 200, 200)  # Teal color
+                dash_length = 5
+                gap_length = 5
+                start_x = graph_left
+                
+                while start_x < graph_left + graph_width:
+                    end_x = min(start_x + dash_length, graph_left + graph_width)
+                    pygame.draw.line(
+                        screen,
+                        compliance_color,
+                        (start_x, compliance_y),
+                        (end_x, compliance_y),
+                        2
+                    )
+                    start_x = end_x + gap_length
     
     # Add additional information at the bottom
     bottom_section_y = camera_height + trust_viz_height - 60  # Position 60px from bottom

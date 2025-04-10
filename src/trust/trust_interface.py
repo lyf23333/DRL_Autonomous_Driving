@@ -56,8 +56,8 @@ class TrustInterface:
         self.driving_metrics = {
             'steering_stability': 1.0,  # 0.0 (unstable) to 1.0 (stable)
             'acceleration_smoothness': 1.0,  # 0.0 (jerky) to 1.0 (smooth)
-            'braking_smoothness': 1.0,  # 0.0 (abrupt) to 1.0 (smooth)
             'hesitation_level': 0.0,    # 0.0 (confident) to 1.0 (hesitant)
+            'speed_compliance': 1.0,    # 0.0 (excessive speeding) to 1.0 (compliant)
         }
         
         # History for calculating smoothness
@@ -67,8 +67,8 @@ class TrustInterface:
         
         # Thresholds for detecting events
         self.steering_correction_threshold = 0.3  # Significant steering change
-        self.abrupt_acceleration_threshold = 3.0  # m/s²
-        self.abrupt_braking_threshold = -4.0      # m/s²
+        self.abrupt_acceleration_threshold = 2.5  # m/s²
+        self.abrupt_braking_threshold = -2.0      # m/s²
         self.hesitation_threshold = 1.5           # seconds of low speed near decision points
         
         self.current_intervention_prob = 0.0
@@ -119,11 +119,13 @@ class TrustInterface:
         """
         current_time = self.world.get_snapshot().timestamp.elapsed_seconds
 
-        smoothness_factor = (self.driving_metrics['acceleration_smoothness'] + 
-                                self.driving_metrics['braking_smoothness']) / 2.0
+        smoothness_factor = self.driving_metrics['acceleration_smoothness']
         stability_factor = self.driving_metrics['steering_stability']
         confidence_factor = 1.0 - self.driving_metrics['hesitation_level']
-        self.trust_level = 0.4 * smoothness_factor + 0.4 * stability_factor + 0.2 * confidence_factor
+        compliance_factor = self.driving_metrics['speed_compliance']
+        
+        # Update trust level based on weighted driving metrics
+        self.trust_level = 0.3 * smoothness_factor + 0.4 * stability_factor + 0.1 * confidence_factor + 0.2 * compliance_factor
         
         if intervention:
             self.last_intervention_time = current_time
@@ -151,12 +153,13 @@ class TrustInterface:
         if intervention_type in self.intervention_types:
             self.intervention_types[intervention_type].append(timestamp)
     
-    def update_driving_metrics(self, vehicle):
+    def update_driving_metrics(self, vehicle, target_speed=None):
         """
         Update driving behavior metrics based on vehicle state
         
         Args:
             vehicle: CARLA vehicle object
+            target_speed: Current target speed in km/h (if provided)
         """
         if not vehicle:
             return
@@ -167,7 +170,7 @@ class TrustInterface:
         
         # Get current vehicle state
         velocity = vehicle.get_velocity()
-        current_speed = 3.6 * np.sqrt(velocity.x**2 + velocity.y**2)  # km/h
+        current_speed = np.sqrt(velocity.x**2 + velocity.y**2)  # Convert to km/h (3.6 = conversion from m/s to km/h)
         current_steering = vehicle.get_control().steer
         
         # Calculate acceleration
@@ -184,28 +187,45 @@ class TrustInterface:
             self.steering_history.pop(0)
             
         # 2. Calculate steering stability
-        if len(self.steering_history) > 1:
-            steering_variance = np.var(self.steering_history)
-            self.driving_metrics['steering_stability'] = max(0.0, min(1.0, 1.0 - steering_variance * 1.0))
+        if len(self.steering_history) > 2:
+            current_steering_change = abs(current_steering - self.steering_history[-2])
+            last_steering_change = abs(self.steering_history[-2] - self.steering_history[-3])
+            steering_variance = abs(current_steering_change - last_steering_change)
+            steering_over_threshold = current_steering > self.steering_correction_threshold
+            self.driving_metrics['steering_stability'] = max(0.0, min(1.0, 1.0 - steering_variance - steering_over_threshold * 0.2))
         
         # 3. Calculate acceleration smoothness
-        if len(self.acceleration_history) > 1:
-            # Detect abrupt acceleration
-            if acceleration > self.abrupt_acceleration_threshold:
-                self.driving_metrics['acceleration_smoothness'] = max(0.0, self.driving_metrics['acceleration_smoothness'] - 0.1)
+        if len(self.acceleration_history) > 2:
+            acceleration_diff = abs(acceleration - self.acceleration_history[-2])
+            acceleration_over_threshold = abs(acceleration) > self.abrupt_acceleration_threshold
+
+            print(f"acceleration_diff: {acceleration_diff}, acceleration_over_threshold: {acceleration_over_threshold}")
+            self.driving_metrics['acceleration_smoothness'] = max(0.0, min(1.0, 1.0 -acceleration_diff * 0.3 - acceleration_over_threshold * 0.2))
+        
+        # 4. Calculate speed compliance (new metric)
+        if target_speed is not None:
+            # Calculate how much the current speed exceeds the target speed
+            speed_excess = max(0, current_speed * 3.6 - target_speed)
+            
+            # Define thresholds for speed excess
+            slight_excess_threshold = 5.0    # km/h over target speed
+            major_excess_threshold = 15.0    # km/h over target speed
+            
+            if speed_excess <= 0:
+                # Speed is below or at target - maintain full compliance
+                self.driving_metrics['speed_compliance'] = min(1.0, self.driving_metrics['speed_compliance'] + 0.02)
+            elif speed_excess <= slight_excess_threshold:
+                # Slightly over speed limit - minor penalty
+                self.driving_metrics['speed_compliance'] = max(0.0, self.driving_metrics['speed_compliance'] - 0.03)
+            elif speed_excess <= major_excess_threshold:
+                # Moderately over speed limit - medium penalty
+                self.driving_metrics['speed_compliance'] = max(0.0, self.driving_metrics['speed_compliance'] - 0.07)
             else:
-                # Gradually recover smoothness
-                self.driving_metrics['acceleration_smoothness'] = min(1.0, self.driving_metrics['acceleration_smoothness'] + 0.02)
-        
-        # 4. Calculate braking smoothness
-        if acceleration < self.abrupt_braking_threshold:
-            self.driving_metrics['braking_smoothness'] = max(0.0, self.driving_metrics['braking_smoothness'] - 0.1)
-        else:
-            # Gradually recover smoothness
-            self.driving_metrics['braking_smoothness'] = min(1.0, self.driving_metrics['braking_smoothness'] + 0.02)
-        
+                # Significantly over speed limit - major penalty
+                self.driving_metrics['speed_compliance'] = max(0.0, self.driving_metrics['speed_compliance'] - 0.15)
+
         # 5. Detect hesitation (low speed near decision points)
-        if self.near_decision_point and current_speed < 5.0:  # Below 5 km/h near intersection
+        if self.near_decision_point and current_speed < 5.0 / 3.6:  # Below 5 km/h near intersection
             if self.hesitation_start_time is None:
                 self.hesitation_start_time = current_time
             elif current_time - self.hesitation_start_time > self.hesitation_threshold:
@@ -352,8 +372,8 @@ class TrustInterface:
         self.driving_metrics = {
             'steering_stability': 1.0,
             'acceleration_smoothness': 1.0,
-            'braking_smoothness': 1.0,
             'hesitation_level': 0.0,
+            'speed_compliance': 1.0,
         }
         
         # Reset behavior adjustment
@@ -385,8 +405,7 @@ class TrustInterface:
         
         # Get relevant metrics
         stability_factor = self.driving_metrics['steering_stability']
-        smoothness_factor = (self.driving_metrics['acceleration_smoothness'] + 
-                           self.driving_metrics['braking_smoothness']) / 2.0
+        smoothness_factor = self.driving_metrics['acceleration_smoothness']
         hesitation_factor = 1.0 - self.driving_metrics['hesitation_level']
         
         # Store these for potential use in action modification
@@ -451,16 +470,15 @@ class TrustInterface:
         metric_names = [
             "Steering Stability", 
             "Acceleration Smoothness", 
-            "Braking Smoothness",
             "Confidence (vs Hesitation)",
-            "Engagement Consistency"
+            "Speed Compliance"
         ]
         
         metric_values = [
             metrics['steering_stability'],
             metrics['acceleration_smoothness'],
-            metrics['braking_smoothness'],
-            1.0 - metrics['hesitation_level']
+            1.0 - metrics['hesitation_level'],
+            metrics['speed_compliance']
         ]
         
         metric_colors = [
@@ -468,7 +486,6 @@ class TrustInterface:
             self.GREEN,
             self.YELLOW,
             self.GREEN,
-            self.BLUE
         ]
         
         for i, (name, value, color) in enumerate(zip(metric_names, metric_values, metric_colors)):

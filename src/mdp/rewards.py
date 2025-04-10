@@ -56,6 +56,8 @@ def calculate_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshol
     # Use trust-based target speed instead of fixed value
     speed_diff = abs(current_speed - target_speed)
     progress_reward = 1.0 - min(1.0, speed_diff / max(1.0, target_speed))  # Avoid division by zero
+    if current_speed > 1.1 * target_speed:
+        progress_reward = 0.0
     
     # Safety reward components
     safety_reward = 0.0
