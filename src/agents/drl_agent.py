@@ -240,6 +240,10 @@ class DRLAgent:
                 self.tb_writer.add_scalar('Metrics/current_speed', info.get('current_speed', 0), step)
                 self.tb_writer.add_scalar('Metrics/target_speed', info.get('target_speed', 0), step)
                 
+                # Log speed compliance metric
+                if 'speed_compliance' in info:
+                    self.tb_writer.add_scalar('Metrics/speed_compliance', info['speed_compliance'], step)
+                
                 # Log intervention data 
                 is_intervention = info.get('intervention_active', False)
                 intervention_prob = info.get('intervention_probability', 0)
@@ -462,6 +466,10 @@ class DRLAgent:
                     # Log speed metrics
                     self.tb_writer.add_scalar('Metrics/current_speed', info.get('current_speed', 0), step)
                     self.tb_writer.add_scalar('Metrics/target_speed', info.get('target_speed', 0), step)
+                    
+                    # Log speed compliance metric
+                    if 'speed_compliance' in info:
+                        self.tb_writer.add_scalar('Metrics/speed_compliance', info['speed_compliance'], step)
                     
                     # Log performance metrics
                     self.tb_writer.add_scalar('Performance/crash_event', 1.0 if info.get('collision_detected', False) else 0.0, step)

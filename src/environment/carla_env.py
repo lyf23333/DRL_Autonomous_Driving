@@ -172,8 +172,8 @@ class CarlaEnv(gym.Env):
             except Exception as e:
                 print(f"Warning: Rendering failed: {e}")
         
-        # Update driving metrics in trust interface
-        self.trust_interface.update_driving_metrics(self.vehicle)
+        # Update driving metrics in trust interface with current target speed
+        self.trust_interface.update_driving_metrics(self.vehicle, target_speed=self.target_speed)
         
         # Calculate time delta since last step
         current_time = self.world.get_snapshot().timestamp.elapsed_seconds
@@ -243,7 +243,7 @@ class CarlaEnv(gym.Env):
         
         # Additional info
         info = {
-            'trust_level': self.trust_interface.trust_level if self.trust_interface else 0.75,
+            'trust_level': self.trust_interface.trust_level,
             'current_speed': 3.6 * np.sqrt(self.vehicle.get_velocity().x**2 + self.vehicle.get_velocity().y**2) if self.vehicle else 0.0,
             'target_speed': self.target_speed,
             'step_count': self.step_count,
@@ -270,7 +270,9 @@ class CarlaEnv(gym.Env):
             # Calculate waypoint deviation
             'waypoint_deviation': self._calculate_waypoint_deviation() if self.waypoints and self.current_waypoint_idx < len(self.waypoints) else 0.0,
             # Add engagement duration tracking
-            'engagement_duration': self._calculate_engagement_duration() if hasattr(self, '_last_intervention_step') else 0
+            'engagement_duration': self._calculate_engagement_duration() if hasattr(self, '_last_intervention_step') else 0,
+            # Add speed compliance metric
+            'speed_compliance': self.trust_interface.driving_metrics['speed_compliance']
         }
 
         self.step_count += 1
