@@ -33,7 +33,7 @@ class CarlaEnv(gym.Env):
         self.vehicle, self.spawn_point = spawn_ego_vehicle(self.world)
 
         # Initialize observation and action managers
-        self.sensor_manager = SensorManager(self.world, self.vehicle, self.render_mode)
+        self.sensor_manager = SensorManager(self.world, self.vehicle, self.render_mode, self.config)
         self.observation_manager = ObservationManager(self.config, self.sensor_manager)
         self.action_manager = ActionManager(self.config)
         

@@ -30,10 +30,15 @@ class ObservationManager:
             self.num_observed_waypoints = getattr(config, 'num_observed_waypoints', 3)
             self.location_history_length = getattr(config, 'location_history_length', 10)
             self.action_history_length = getattr(config, 'action_history_length', 5)
+            self.radar_resolution = getattr(config, 'radar_resolution', 3.0)
         else:
             self.num_observed_waypoints = 3
             self.location_history_length = 10
             self.action_history_length = 5
+            self.radar_resolution = 3.0
+        
+        # Calculate number of radar points based on resolution (360 / resolution)
+        self.radar_points_count = int(360 / self.radar_resolution)
         
         # Location history buffer setup
         self.location_history = deque(maxlen=self.location_history_length)
@@ -63,8 +68,8 @@ class ObservationManager:
             ),
             'radar_obs': spaces.Box(
                 low=0.0,
-                high=20.0,  # Maximum radar range is configurable
-                shape=(1, 360),  # 1 layer, 360 azimuth angles (1-degree resolution)
+                high=20.0 if config is None else config.radar_range,  # Maximum radar range from config
+                shape=(1, self.radar_points_count),  # 1 layer, resolution-based azimuth angles
                 dtype=np.float32
             )
         })

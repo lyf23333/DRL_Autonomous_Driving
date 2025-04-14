@@ -60,6 +60,7 @@ class CarlaEnvConfig:
     
     # Observation settings
     radar_range: float = 20.0  # meters
+    radar_resolution: float = 3.0  # degrees per radar observation point
     max_detectable_vehicles: int = 3
     
     # Reward component weights

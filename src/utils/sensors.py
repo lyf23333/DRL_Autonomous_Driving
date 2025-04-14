@@ -9,7 +9,7 @@ class SensorManager:
     This class centralizes sensor functionality that was previously scattered in the CarlaEnv class.
     """
     
-    def __init__(self, world, vehicle, render_mode=None):
+    def __init__(self, world, vehicle, render_mode=None, config=None):
         """
         Initialize the sensor manager.
         
@@ -17,10 +17,12 @@ class SensorManager:
             world: CARLA world object
             vehicle: CARLA vehicle to attach sensors to
             render_mode: Rendering mode (None, 'human', or 'rgb_array')
+            config: Configuration object with sensor settings
         """
         self.world = world
         self.vehicle = vehicle
         self.render_mode = render_mode
+        self.config = config
         
         # Sensor storage
         self.sensors = {}
@@ -37,7 +39,10 @@ class SensorManager:
         self.camera_height = 600
         
         # Radar settings
-        self.radar_max_distance = 20.0  # Maximum distance for radar observations (meters)
+        self.radar_max_distance = 20.0 if config is None else config.radar_range  # Maximum distance for radar observations (meters)
+        self.radar_resolution = 3.0 if config is None else config.radar_resolution  # Degrees per radar observation point
+        # Calculate number of radar points based on resolution (360 / resolution)
+        self.radar_points_count = int(360 / self.radar_resolution)
         self.radar_points_history = {}  # Store history for temporal filtering
         
         # Setup sensors if vehicle is available
@@ -304,12 +309,12 @@ class SensorManager:
             numpy.ndarray: Array containing distance measurements at each angle
         """
         # Create a simple array to hold distance measurements
-        # Shape: [360 azimuth angles] - we'll use just one layer for simplicity
-        radar_obs = np.full(360, self.radar_max_distance)  # Fill with max range
+        # Shape is determined by radar resolution
+        radar_obs = np.full(self.radar_points_count, self.radar_max_distance)  # Fill with max range
         
         # If no radar data is available, return the default observation
         if not self.radar_points:
-            return radar_obs.reshape(1, 360)  # Reshape to match expected dimensions
+            return radar_obs.reshape(1, self.radar_points_count)  # Reshape to match expected dimensions
         
         # First pass: collect all points by angle
         angle_data = {}
@@ -334,10 +339,10 @@ class SensorManager:
             if distance > self.radar_max_distance:
                 continue
                 
-            # Calculate angle index (1-degree resolution)
-            angle_idx = int(angle_deg)
-            if angle_idx >= 360:  # Handle edge case
-                angle_idx = 359
+            # Calculate angle index based on radar resolution
+            angle_idx = int(angle_deg / self.radar_resolution)
+            if angle_idx >= self.radar_points_count:  # Handle edge case
+                angle_idx = self.radar_points_count - 1
             
             # Store each point with its stability and distance
             if angle_idx not in angle_data:
@@ -366,7 +371,7 @@ class SensorManager:
         
         # Apply Gaussian smoothing to the radar observation to reduce noise
         # Create a circular kernel for proper handling of the angle wrap-around
-        kernel_size = 5
+        kernel_size = min(3, max(1, int(5 / self.radar_resolution)))  # Adjust kernel size based on resolution
         sigma = 1.0
         
         # Create a copy for smoothing (to handle the circular nature of angles)
@@ -381,13 +386,13 @@ class SensorManager:
         
         # Extract the original part and handle special cases (max distance)
         # Only smooth points that are not at max distance
-        for i in range(360):
+        for i in range(self.radar_points_count):
             idx = i + kernel_size
             if radar_obs[i] < self.radar_max_distance:
                 radar_obs[i] = smoothed_extended[idx]
         
-        # Reshape to match the expected dimensions (1 layer, 360 angles)
-        return radar_obs.reshape(1, 360)
+        # Reshape to match the expected dimensions (1 layer, radar_points_count angles)
+        return radar_obs.reshape(1, self.radar_points_count)
     
     def render_radar_visualization(self, screen, camera_width, camera_height):
         """Render radar data visualization on the Pygame screen"""
@@ -478,7 +483,7 @@ class SensorManager:
         
         # Add a title with max distance and resolution
         title_font = pygame.font.SysFont('Arial', 12)
-        title_text = title_font.render(f'Radar View ({self.radar_max_distance}m, 1° res)', True, (255, 255, 255))
+        title_text = title_font.render(f'Radar View ({self.radar_max_distance}m, {self.radar_resolution}° res)', True, (255, 255, 255))
         radar_surface.blit(title_text, (center_x - title_text.get_width() // 2, 5))
         
         # Position the radar visualization in the bottom-right corner of the camera view
