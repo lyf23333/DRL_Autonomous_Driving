@@ -45,7 +45,7 @@
                 "--render",
                 "--start-carla",
                 "--quality=Low",
-                "--offscreen",
+                // "--offscreen",
                 "--run-name=test",
                 "--timesteps=200000"
             ],
@@ -58,9 +58,9 @@
             "program": "${workspaceFolder}/main.py",
             "args": [
                 "--scenario=urban_traffic",
-                "--algorithm=ppo",
+                "--algorithm=sac",
                 "--eval",
-                "--load-model=models/ppo/checkpoints/2025-04-12_18-43-29_ppo_hyperparameter_tuning_ppo_ppo_UrbanTrafficScenario/checkpoint_560000.zip",
+                "--load-model=models/sac/checkpoints/2025-04-14_13-46-18_trust_leve_rew_0.02_sac_sac_UrbanTrafficScenario/checkpoint_150000.zip",
                 "--render",
                 "--start-carla",
             ],

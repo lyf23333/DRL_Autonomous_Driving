@@ -16,12 +16,13 @@ from ..trust.trust_interface import TrustInterface
 class CarlaEnv(gym.Env):
     """Custom Carla environment that follows gymnasium interface"""
     
-    def __init__(self, trust_interface, config):
+    def __init__(self, trust_interface, config, eval=False):
         self._initialized = False
         super(CarlaEnv, self).__init__()
         
         # Load configuration
         self.config = config
+        self.eval = eval
         
         # Connect to CARLA server
         self.client = carla.Client(self.config.host, self.config.port)
@@ -379,6 +380,8 @@ class CarlaEnv(gym.Env):
         
         # 1. Update target speed based on trust level
         self.target_speed = self.min_target_speed + (self.base_target_speed - self.min_target_speed) * trust_level
+        if self.eval:
+            self.target_speed = 30.0
     
     def close(self):
         """Clean up resources when environment is closed"""

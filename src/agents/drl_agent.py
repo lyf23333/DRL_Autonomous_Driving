@@ -79,8 +79,8 @@ class DRLAgent:
                 verbose=1,
                 tensorboard_log=self.tensorboard_log,
                 learning_rate=sched_LR,
-                clip_range=0.1,
-                # ent_coef=0.01,
+                clip_range=0.2,
+                ent_coef=1e-3,
                 n_epochs=5
             )
         elif self.algorithm == 'sac':

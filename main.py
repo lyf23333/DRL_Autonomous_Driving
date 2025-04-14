@@ -95,12 +95,14 @@ def main():
     if args.algorithm == 'dqn':
         env = CarlaEnvDiscrete(
             trust_interface=TrustInterface(), 
-            config=env_config
+            config=env_config,
+            eval=args.eval
         )
     else:
         env = CarlaEnv(
             trust_interface=TrustInterface(), 
-            config=env_config
+            config=env_config,
+            eval=args.eval
         )
     
     # Initialize DRL agent

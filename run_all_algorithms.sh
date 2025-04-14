@@ -6,12 +6,12 @@
 
 # Set common parameters
 SCENARIO="urban_traffic"  # Options: lane_switching, urban_traffic, obstacle_avoidance
-TIMESTEPS=500000           # Total timesteps for training
+TIMESTEPS=1000000           # Total timesteps for training
 TOWN="Town01"              # CARLA town to use
 LR=0.0003                  # Learning rate (3e-4)
 LR_SCHEDULE="exponential"  # Learning rate schedule
 CHECKPOINT_FREQ=10000      # Save checkpoint every N timesteps
-RUN_NAME="comparison"      # Base name for this comparison run
+RUN_NAME="trust_leve_rew_0.02"      # Base name for this comparison run
 
 # Other settings
 START_CARLA=true           # Whether to start CARLA server automatically
@@ -72,7 +72,6 @@ echo "Timestamp: $TIMESTAMP"
 
 # Run each algorithm in sequence
 run_algorithm "sac"
-run_algorithm "ppo"
 run_algorithm "ddpg"
 run_algorithm "dqn"
 
