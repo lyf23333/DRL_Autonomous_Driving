@@ -159,8 +159,8 @@ class CarlaEnv(gym.Env):
         # Update the world
         self.world.tick()
         
-        # Update the observation manager with current vehicle state
-        self.observation_manager.update(self.vehicle)
+        # Update the observation manager with current vehicle state and action
+        self.observation_manager.update(self.vehicle, adjusted_action)
         
         # Check if we've reached the current waypoint and update if needed
         self._update_waypoint_index()
@@ -349,8 +349,8 @@ class CarlaEnv(gym.Env):
         # Tick the world to update
         self.world.tick()
         
-        # Initialize the observation manager with the vehicle's initial position
-        self.observation_manager.update(self.vehicle)
+        # Initialize the observation manager with the vehicle's initial position and zero action
+        self.observation_manager.update(self.vehicle, np.zeros(2, dtype=np.float32))
         
         # Get observation using observation manager
         obs = self.observation_manager.get_observation(

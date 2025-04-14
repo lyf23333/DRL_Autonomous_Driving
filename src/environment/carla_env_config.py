@@ -33,6 +33,7 @@ class CarlaEnvConfig:
     max_trust_history: int = 100
     max_reward_history: int = 100
     location_history_length: int = 5
+    action_history_length: int = 5  # Number of past actions to include in observation
     
     # Path following settings
     waypoint_threshold: float = 2.0  # meters
