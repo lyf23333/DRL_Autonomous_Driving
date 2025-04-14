@@ -29,12 +29,25 @@ class ObservationManager:
         if config:
             self.num_observed_waypoints = getattr(config, 'num_observed_waypoints', 3)
             self.location_history_length = getattr(config, 'location_history_length', 10)
+            self.action_history_length = getattr(config, 'action_history_length', 5)
+            self.radar_resolution = getattr(config, 'radar_resolution', 3.0)
         else:
             self.num_observed_waypoints = 3
             self.location_history_length = 10
+            self.action_history_length = 5
+            self.radar_resolution = 3.0
+        
+        # Calculate number of radar points based on resolution (360 / resolution)
+        self.radar_points_count = int(360 / self.radar_resolution)
         
         # Location history buffer setup
         self.location_history = deque(maxlen=self.location_history_length)
+        
+        # Action history buffer setup
+        self.action_history = deque(maxlen=self.action_history_length)
+        # Initialize with zeros
+        for _ in range(self.action_history_length):
+            self.action_history.append(np.zeros(2, dtype=np.float32))
         
         # Define the observation space
         self.observation_space = spaces.Dict({
@@ -48,28 +61,27 @@ class ObservationManager:
                 high=np.array([np.inf] * (2 * self.location_history_length)),
                 dtype=np.float32
             ),
-            'recent_intervention': spaces.Discrete(2),  # Binary: 0 or 1
-            'scenario_obs': spaces.Box(
-                low=-np.inf,
-                high=np.inf,
-                shape=(15,),  # Updated for 3 vehicles with 5 values each
+            'action_history': spaces.Box(
+                low=np.array([-1.0] * (2 * self.action_history_length)),
+                high=np.array([1.0] * (2 * self.action_history_length)),
                 dtype=np.float32
             ),
             'radar_obs': spaces.Box(
                 low=0.0,
-                high=20.0,  # Maximum radar range is configurable
-                shape=(1, 360),  # 1 layer, 360 azimuth angles (1-degree resolution)
+                high=20.0 if config is None else config.radar_range,  # Maximum radar range from config
+                shape=(1, self.radar_points_count),  # 1 layer, resolution-based azimuth angles
                 dtype=np.float32
             )
         })
     
-    def update(self, vehicle):
+    def update(self, vehicle, action=None):
         """
         Update observation manager state based on current vehicle state.
         This should be called every step before getting the observation.
         
         Args:
             vehicle: CARLA vehicle object
+            action: Current action being applied [steering, throttle/brake]
         """
         if vehicle is None:
             return
@@ -77,6 +89,10 @@ class ObservationManager:
         # Update location history
         location = vehicle.get_transform().location
         self.location_history.append((location.x, location.y))
+        
+        # Update action history if provided
+        if action is not None:
+            self.action_history.append(np.array(action, dtype=np.float32))
     
     def get_observation(self, vehicle, waypoints, current_waypoint_idx, waypoint_threshold, 
                        trust_interface, active_scenario, target_speed=20.0):
@@ -105,11 +121,8 @@ class ObservationManager:
         # Get location history
         location_history = self._get_location_history(vehicle)
         
-        # Get intervention observation
-        intervention_obs = self._get_intervention_observation(trust_interface)
-        
-        # Get scenario observation
-        scenario_obs = self._get_scenario_observation(active_scenario)
+        # Get action history
+        action_history = self._get_action_history()
 
         # Get radar observation
         radar_observation = self.sensor_manager.get_radar_observation()
@@ -118,8 +131,7 @@ class ObservationManager:
         obs = {
             'vehicle_state': vehicle_state,
             'location_history': location_history,
-            'recent_intervention': intervention_obs,
-            'scenario_obs': scenario_obs,
+            'action_history': action_history,
             'radar_obs': radar_observation
         }
         
@@ -232,6 +244,17 @@ class ObservationManager:
         # Flatten array
         return relative_positions.flatten()
     
+    def _get_action_history(self):
+        """
+        Get the flattened action history.
+        
+        Returns:
+            numpy.ndarray: Flattened array of past actions
+        """
+        # Convert the action history deque to a flattened numpy array
+        action_history_array = np.array(list(self.action_history), dtype=np.float32)
+        return action_history_array.flatten()
+    
     def _get_intervention_observation(self, trust_interface):
         """
         Get binary intervention observation.
@@ -267,4 +290,9 @@ class ObservationManager:
     def reset(self):
         """Reset the observation manager"""
         # Clear location history
-        self.location_history.clear() 
+        self.location_history.clear()
+        
+        # Clear action history and initialize with zeros
+        self.action_history.clear()
+        for _ in range(self.action_history_length):
+            self.action_history.append(np.zeros(2, dtype=np.float32)) 

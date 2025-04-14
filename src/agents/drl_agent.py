@@ -1,4 +1,5 @@
 from stable_baselines3 import PPO, SAC, DDPG, DQN
+from stable_baselines3.common.vec_env import VecNormalize
 import numpy as np
 import os
 from typing import Type, Optional
@@ -9,6 +10,7 @@ import math
 class DRLAgent:
     def __init__(self, env, algorithm='ppo', total_timesteps=100000):
         self.env = env
+        # self.env = VecNormalize(env, norm_obs=True, norm_reward=True)
         self.algorithm = algorithm.lower()
         
         # Set up model paths
@@ -76,7 +78,10 @@ class DRLAgent:
                 self.env,
                 verbose=1,
                 tensorboard_log=self.tensorboard_log,
-                learning_rate=sched_LR.value,
+                learning_rate=sched_LR,
+                clip_range=0.2,
+                ent_coef=1e-3,
+                n_epochs=5
             )
         elif self.algorithm == 'sac':
             return SAC(
@@ -84,7 +89,7 @@ class DRLAgent:
                 self.env,
                 verbose=1,
                 tensorboard_log=self.tensorboard_log,
-                learning_rate=sched_LR.value,
+                learning_rate=sched_LR,
             )
         elif self.algorithm == 'ddpg':
             return DDPG(
@@ -92,7 +97,7 @@ class DRLAgent:
                 self.env,
                 verbose=1,
                 tensorboard_log=self.tensorboard_log,
-                learning_rate=sched_LR.value,
+                learning_rate=sched_LR,
             )
         elif self.algorithm == 'dqn':
             return DQN(
@@ -100,12 +105,12 @@ class DRLAgent:
                 self.env,
                 verbose=1,
                 tensorboard_log=self.tensorboard_log,
-                learning_rate=sched_LR.value,
+                learning_rate=sched_LR,
             )
         else:
             raise ValueError(f"Unsupported algorithm: {self.algorithm}")
     
-    def set_learning_rate_params(self, learning_rate, lr_schedule='constant', lr_decay_factor=0.1):
+    def set_learning_rate_params(self, learning_rate, lr_schedule='constant', lr_decay_factor=0.1, total_timesteps=1000000):
         """Set learning rate and schedule parameters
         
         Args:
@@ -118,7 +123,7 @@ class DRLAgent:
         self.lr_decay_factor = lr_decay_factor
         
         # Recreate the model with the new learning rate settings
-        self.model = self._create_model()
+        self.model = self._create_model(total_timesteps)
     
     def train(self, scenario, total_timesteps=100000, scenario_config=None, run_name=None):
         """Train the agent on a specific scenario

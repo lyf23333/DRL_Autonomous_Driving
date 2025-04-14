@@ -71,8 +71,8 @@ class TerminationManager:
         # Check if vehicle is off-road - TERMINATE
         current_waypoint = world.get_map().get_waypoint(vehicle.get_location())
         if current_waypoint is None:
-            print("Episode terminated: Vehicle is off-road")
-            terminated = True
+            print("Episode truncated: Vehicle is off-road")
+            truncated = True
             
         # Check if vehicle is stuck (very low speed for extended time) - TERMINATE
         velocity = vehicle.get_velocity()
@@ -84,8 +84,8 @@ class TerminationManager:
             self.low_speed_counter = 0
             
         if self.low_speed_counter > 100:  # Stuck for too long
-            print("Episode terminated: Vehicle is stuck")
-            terminated = True
+            print("Episode truncated: Vehicle is stuck")
+            truncated = True
             
         # Check if maximum episode length reached - TRUNCATE
         if step_count >= self.max_episode_steps:

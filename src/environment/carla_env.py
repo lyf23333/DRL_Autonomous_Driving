@@ -16,12 +16,13 @@ from ..trust.trust_interface import TrustInterface
 class CarlaEnv(gym.Env):
     """Custom Carla environment that follows gymnasium interface"""
     
-    def __init__(self, trust_interface, config):
+    def __init__(self, trust_interface, config, eval=False):
         self._initialized = False
         super(CarlaEnv, self).__init__()
         
         # Load configuration
         self.config = config
+        self.eval = eval
         
         # Connect to CARLA server
         self.client = carla.Client(self.config.host, self.config.port)
@@ -33,7 +34,7 @@ class CarlaEnv(gym.Env):
         self.vehicle, self.spawn_point = spawn_ego_vehicle(self.world)
 
         # Initialize observation and action managers
-        self.sensor_manager = SensorManager(self.world, self.vehicle, self.render_mode)
+        self.sensor_manager = SensorManager(self.world, self.vehicle, self.render_mode, self.config)
         self.observation_manager = ObservationManager(self.config, self.sensor_manager)
         self.action_manager = ActionManager(self.config)
         
@@ -159,8 +160,8 @@ class CarlaEnv(gym.Env):
         # Update the world
         self.world.tick()
         
-        # Update the observation manager with current vehicle state
-        self.observation_manager.update(self.vehicle)
+        # Update the observation manager with current vehicle state and action
+        self.observation_manager.update(self.vehicle, adjusted_action)
         
         # Check if we've reached the current waypoint and update if needed
         self._update_waypoint_index()
@@ -349,8 +350,8 @@ class CarlaEnv(gym.Env):
         # Tick the world to update
         self.world.tick()
         
-        # Initialize the observation manager with the vehicle's initial position
-        self.observation_manager.update(self.vehicle)
+        # Initialize the observation manager with the vehicle's initial position and zero action
+        self.observation_manager.update(self.vehicle, np.zeros(2, dtype=np.float32))
         
         # Get observation using observation manager
         obs = self.observation_manager.get_observation(
@@ -379,6 +380,8 @@ class CarlaEnv(gym.Env):
         
         # 1. Update target speed based on trust level
         self.target_speed = self.min_target_speed + (self.base_target_speed - self.min_target_speed) * trust_level
+        if self.eval:
+            self.target_speed = 30.0
     
     def close(self):
         """Clean up resources when environment is closed"""

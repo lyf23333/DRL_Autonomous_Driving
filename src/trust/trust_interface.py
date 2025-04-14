@@ -199,7 +199,6 @@ class TrustInterface:
             acceleration_diff = abs(acceleration - self.acceleration_history[-2])
             acceleration_over_threshold = abs(acceleration) > self.abrupt_acceleration_threshold
 
-            print(f"acceleration_diff: {acceleration_diff}, acceleration_over_threshold: {acceleration_over_threshold}")
             self.driving_metrics['acceleration_smoothness'] = max(0.0, min(1.0, 1.0 -acceleration_diff * 0.3 - acceleration_over_threshold * 0.2))
         
         # 4. Calculate speed compliance (new metric)

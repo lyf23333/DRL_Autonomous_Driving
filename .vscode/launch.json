@@ -40,17 +40,16 @@
             "program": "${workspaceFolder}/main.py",
             "args": [
                 "--scenario=urban_traffic",
-                "--algorithm=dqn",
+                "--algorithm=ppo",
                 "--train",
                 "--render",
                 "--start-carla",
                 "--quality=Low",
-                "--offscreen",
+                // "--offscreen",
                 "--run-name=test",
                 "--timesteps=200000"
             ],
-            "console": "integratedTerminal",
-            "justMyCode": true
+            "console": "integratedTerminal"
         },
         {
             "name": "play ppo urban traffic",
@@ -59,9 +58,9 @@
             "program": "${workspaceFolder}/main.py",
             "args": [
                 "--scenario=urban_traffic",
-                "--algorithm=ppo",
+                "--algorithm=sac",
                 "--eval",
-                "--load-model=models/ppo/checkpoints/town01_few_obstacles_no_radar_observation_trust_reward_ppo_UrbanTrafficScenario_2025-03-24_02-11-36/town01_few_obstacles_no_radar_observation_trust_reward_ppo_UrbanTrafficScenario_2025-03-24_02-11-36_steps_1100000.zip",
+                "--load-model=models/sac/checkpoints/2025-04-14_13-46-18_trust_leve_rew_0.02_sac_sac_UrbanTrafficScenario/checkpoint_150000.zip",
                 "--render",
                 "--start-carla",
             ],

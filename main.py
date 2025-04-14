@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument('--lr-schedule', type=str, default='exponential',
                       choices=['constant', 'linear', 'exponential', 'cosine'],
                       help='Learning rate schedule')
-    parser.add_argument('--lr-decay-factor', type=float, default=0.1,
+    parser.add_argument('--lr-decay-factor', type=float, default=0.05,
                       help='Factor by which to decay learning rate (for exponential)')
     
     # Model loading and checkpointing options
@@ -95,12 +95,14 @@ def main():
     if args.algorithm == 'dqn':
         env = CarlaEnvDiscrete(
             trust_interface=TrustInterface(), 
-            config=env_config
+            config=env_config,
+            eval=args.eval
         )
     else:
         env = CarlaEnv(
             trust_interface=TrustInterface(), 
-            config=env_config
+            config=env_config,
+            eval=args.eval
         )
     
     # Initialize DRL agent
@@ -114,14 +116,8 @@ def main():
     agent.set_learning_rate_params(
         learning_rate=args.learning_rate,
         lr_schedule=args.lr_schedule,
-        lr_decay_factor=args.lr_decay_factor
-    )
-    
-    # Set learning rate parameters
-    agent.set_learning_rate_params(
-        learning_rate=args.learning_rate,
-        lr_schedule=args.lr_schedule,
-        lr_decay_factor=args.lr_decay_factor
+        lr_decay_factor=args.lr_decay_factor,
+        total_timesteps=args.timesteps
     )
     
     # Load a pre-trained model if specified

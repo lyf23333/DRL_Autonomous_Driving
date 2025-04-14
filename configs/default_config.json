@@ -12,10 +12,10 @@
     "waypoint_lookahead": 20,
     "max_trust_history": 100,
     "max_reward_history": 100,
-    "location_history_length": 5,
+    "location_history_length": 3,
     "waypoint_threshold": 2.0,
     "path_length": 40,
-    "num_observed_waypoints": 6,
+    "num_observed_waypoints": 3,
     "decision_point_distance": 20.0,
     "base_target_speed": 20.0,
     "min_target_speed": 5.0,
@@ -27,13 +27,14 @@
     "steering_smoothing": 1.0,
     "throttle_smoothing": 1.0,
     "radar_range": 20.0,
+    "radar_resolution": 3.0,
     "max_detectable_vehicles": 3,
     "reward_weights": {
         "path": 0.4,
         "progress": 0.1,
         "safety": 0.15,
         "comfort": 0.05,
-        "trust": 0.2,
+        "trust": 0.02,
         "intervention": -0.1
     }
 } 
