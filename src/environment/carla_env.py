@@ -56,7 +56,7 @@ class CarlaEnv(gym.Env):
         # Target speed attributes
         self.base_target_speed = self.config.base_target_speed  # km/h at max trust
         self.min_target_speed = self.config.min_target_speed    # km/h at min trust
-        self.target_speed = self.base_target_speed  # Default to base speed
+        self.target_speed = self.base_target_speed  # Default to base speed initially, will be randomly set in reset()
         
         # Previous control state for detecting changes
         self.prev_control = None
@@ -178,15 +178,13 @@ class CarlaEnv(gym.Env):
         
         # Calculate time delta since last step
         current_time = self.world.get_snapshot().timestamp.elapsed_seconds
-        dt = current_time - self.last_step_time if self.last_step_time is not None else 0.0
         self.last_step_time = current_time
         
         # Detect manual interventions based on control changes and update trust
         self.trust_interface.detect_interventions_and_update_trust(
             control, 
             self.prev_control, 
-            self.world.get_snapshot(),
-            dt=dt
+            self.world.get_snapshot()
         )
         
         # Update trust-based behavior parameters in trust interface
@@ -247,6 +245,7 @@ class CarlaEnv(gym.Env):
             'trust_level': self.trust_interface.trust_level,
             'current_speed': 3.6 * np.sqrt(self.vehicle.get_velocity().x**2 + self.vehicle.get_velocity().y**2) if self.vehicle else 0.0,
             'target_speed': self.target_speed,
+            'fixed_target_speed': True,  # Flag indicating target speed is fixed for entire episode
             'step_count': self.step_count,
             'driving_metrics': self.trust_interface.driving_metrics if self.trust_interface else {},
             'is_near_decision_point': is_near_decision_point,
@@ -326,6 +325,13 @@ class CarlaEnv(gym.Env):
         self.last_step_time = None
         self.trust_interface.reset()
         
+        # Sample a random target speed for this episode
+        if self.eval:
+            self.target_speed = 30.0  # Fixed speed for evaluation
+        else:
+            self.target_speed = self.min_target_speed + np.random.random() * (self.base_target_speed - self.min_target_speed)
+            print(f"Target speed for this episode: {self.target_speed:.1f} km/h")
+        
         # Reset termination manager
         self.termination_manager.reset()
             
@@ -368,21 +374,20 @@ class CarlaEnv(gym.Env):
         info = {
             'spawn_point': f"({self.spawn_point.location.x:.1f}, {self.spawn_point.location.y:.1f}, {self.spawn_point.location.z:.1f})",
             'trust_level': self.trust_interface.trust_level if self.trust_interface else 0.75,
-            'target_speed': self.target_speed
+            'target_speed': self.target_speed,
+            'fixed_target_speed': True,
+            'speed_sampling': 'random' if not self.eval else 'fixed_eval',
+            'speed_range': f"{self.min_target_speed}-{self.base_target_speed}" if not self.eval else "30.0"
         }
         
         return obs, info
     
     def _update_target_speed(self):
         """Update vehicle behavior parameters based on trust level and driving metrics"""
-        # Get current trust level
-        trust_level = self.trust_interface.trust_level
-        
-        # 1. Update target speed based on trust level
-        self.target_speed = self.min_target_speed + (self.base_target_speed - self.min_target_speed) * trust_level
-        if self.eval:
-            self.target_speed = 30.0
-    
+        # No longer dynamic - target speed remains fixed for the entire episode
+        # It is now set randomly at reset time
+        pass
+
     def close(self):
         """Clean up resources when environment is closed"""
         

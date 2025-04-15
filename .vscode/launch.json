@@ -60,7 +60,7 @@
                 "--scenario=urban_traffic",
                 "--algorithm=sac",
                 "--eval",
-                "--load-model=models/sac/checkpoints/2025-04-14_13-46-18_trust_leve_rew_0.02_sac_sac_UrbanTrafficScenario/checkpoint_150000.zip",
+                "--load-model=models/sac/checkpoints/2025-04-15_00-13-21_trust_leve_rew_0.02_sac_sac_UrbanTrafficScenario/checkpoint_1000000.zip",
                 "--render",
                 "--start-carla",
             ],

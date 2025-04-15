@@ -8,10 +8,10 @@
 SCENARIO="urban_traffic"  # Options: lane_switching, urban_traffic, obstacle_avoidance
 TIMESTEPS=1000000           # Total timesteps for training
 TOWN="Town01"              # CARLA town to use
-LR=0.0003                  # Learning rate (3e-4)
+LR=0.0005                  # Learning rate (3e-4)
 LR_SCHEDULE="exponential"  # Learning rate schedule
 CHECKPOINT_FREQ=10000      # Save checkpoint every N timesteps
-RUN_NAME="trust_leve_rew_0.02"      # Base name for this comparison run
+RUN_NAME="fix_target_speed"      # Base name for this comparison run
 
 # Other settings
 START_CARLA=true           # Whether to start CARLA server automatically
@@ -23,7 +23,6 @@ TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 
 # Function to run an algorithm
 run_algorithm() {
-    pkill -f "CarlaUE4"
     ALGORITHM=$1
     
     echo "================================================"
@@ -43,7 +42,7 @@ run_algorithm() {
     CMD="$CMD --learning-rate $LR"
     CMD="$CMD --lr-schedule $LR_SCHEDULE"
     CMD="$CMD --checkpoint-freq $CHECKPOINT_FREQ"
-    CMD="$CMD --run-name ${RUN_NAME}_${ALGORITHM}"
+    CMD="$CMD --run-name $RUN_NAME"
     
     # Add conditional flags
     if $START_CARLA; then
@@ -71,8 +70,9 @@ echo "Starting sequential training of all algorithms"
 echo "Timestamp: $TIMESTAMP"
 
 # Run each algorithm in sequence
-run_algorithm "sac"
-run_algorithm "ddpg"
+pkill -f "CarlaUE4"
+run_algorithm "ppo"
+# run_algorithm "ddpg"
 run_algorithm "dqn"
 
 echo "All training runs completed!" 

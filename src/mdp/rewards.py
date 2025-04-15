@@ -31,7 +31,7 @@ def calculate_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshol
             'progress': 1.0,   # Making progress along the path
             'safety': 1.0,     # Avoiding collisions and staying on road
             'comfort': 0.5,    # Smooth driving (acceleration, jerk)
-            'trust': 0.5,      # Maintaining high trust level
+            'trust': 0.5,      # Maintaining high trust level (now focused on intervention avoidance)
             'intervention': -1.0  # Penalty for interventions
         }
         
@@ -53,7 +53,7 @@ def calculate_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshol
     path_reward = calculate_path_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshold, target_speed)
     
     # Progress reward (based on speed)
-    # Use trust-based target speed instead of fixed value
+    # Use fixed target speed
     speed_diff = abs(current_speed - target_speed)
     progress_reward = 1.0 - min(1.0, speed_diff / max(1.0, target_speed))  # Avoid division by zero
     if current_speed > 1.1 * target_speed:
@@ -62,7 +62,8 @@ def calculate_reward(vehicle, waypoints, current_waypoint_idx, waypoint_threshol
     # Safety reward components
     safety_reward = 0.0
     
-    # Trust-based reward
+    # Trust-based reward (now focused on high trust level rather than speed matching)
+    # Note: We no longer penalize speed mismatches based on trust
     trust_reward = trust_interface.trust_level if trust_interface else 0.5
     
     # Intervention penalty
