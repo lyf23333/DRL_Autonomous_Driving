@@ -125,7 +125,7 @@ class TrustInterface:
         compliance_factor = self.driving_metrics['speed_compliance']
         
         # Update trust level based on weighted driving metrics
-        self.trust_level = 0.3 * smoothness_factor + 0.4 * stability_factor + 0.1 * confidence_factor + 0.2 * compliance_factor
+        self.trust_level = 1.0
         
         if intervention:
             self.last_intervention_time = current_time

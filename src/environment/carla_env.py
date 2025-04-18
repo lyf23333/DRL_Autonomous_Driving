@@ -42,6 +42,9 @@ class CarlaEnv(gym.Env):
         self.action_space = self.action_manager.action_space
         self.observation_space = self.observation_manager.observation_space
         self.learn_starts = 0
+
+        self.keyboard_steering = 0.0
+        self.keyboard_throttle = 0.0
         
         # Scenario management
         self.active_scenario = None
@@ -135,9 +138,16 @@ class CarlaEnv(gym.Env):
             obs = self.observation_manager.get_observation(
                 None, [], 0, self.waypoint_threshold, 
                 self.trust_interface, self.active_scenario,
-                target_speed=self.target_speed
+                target_speed=self.target_speed,
+                normalized=True
             )
             return obs, 0.0, True, False, {}
+        
+        self._handle_input(action)
+        if isinstance(action, tuple):
+            action = (action[0] * 0.5, action[1])
+        else:
+            action[0] *= 0.5
         
         if self.step_count < self.learn_starts:
             action = self.action_space.sample()
@@ -238,7 +248,8 @@ class CarlaEnv(gym.Env):
             self.waypoint_threshold, 
             self.trust_interface, 
             self.active_scenario,
-            target_speed=self.target_speed
+            target_speed=self.target_speed,
+            normalized=True
         )
         
         # Store current control for next comparison
@@ -282,6 +293,40 @@ class CarlaEnv(gym.Env):
         self.step_count += 1
         
         return obs, reward, terminated, truncated, info
+    
+    def _handle_input(self, action):
+        """Handle keyboard input"""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+        # Get pressed keys
+        keys = pygame.key.get_pressed()
+        
+        get_key = False
+        # Steering
+        if keys[pygame.K_LEFT]:
+            get_key = True
+            self.keyboard_steering = max(-1.0, self.keyboard_steering - 0.1)
+        elif keys[pygame.K_RIGHT]:
+            get_key = True
+            self.keyboard_steering = min(1.0, self.keyboard_steering + 0.1)
+        
+        # Throttle/Brake
+        if keys[pygame.K_UP]:
+            get_key = True
+            self.keyboard_throttle = min(1.0, self.keyboard_throttle + 0.1)
+        elif keys[pygame.K_DOWN]:
+            get_key = True
+            self.keyboard_throttle = max(-1.0, self.keyboard_throttle - 0.1)
+
+        if get_key:
+            if isinstance(action, tuple):
+                action = (self.keyboard_steering, self.keyboard_throttle)
+            else:
+                action[0] = self.keyboard_steering
+                action[1] = self.keyboard_throttle
+            
+        return True
 
     def reset(self, *, seed=None, options=None):
         """Reset the environment
@@ -300,6 +345,9 @@ class CarlaEnv(gym.Env):
             
         # Reset step counter
         self.step_count = 0
+
+        self.keyboard_steering = 0.0
+        self.keyboard_throttle = 0.0
         
         # Reset action manager
         self.action_manager.reset()
@@ -371,7 +419,8 @@ class CarlaEnv(gym.Env):
             self.waypoint_threshold, 
             self.trust_interface, 
             self.active_scenario,
-            target_speed=self.target_speed
+            target_speed=self.target_speed,
+            normalized=True
         )
         
         # Additional info
@@ -391,7 +440,7 @@ class CarlaEnv(gym.Env):
         # No longer dynamic - target speed remains fixed for the entire episode
         # It is now set randomly at reset time
         pass
-
+    
     def close(self):
         """Clean up resources when environment is closed"""
         

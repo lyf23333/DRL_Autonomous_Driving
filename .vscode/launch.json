@@ -66,6 +66,54 @@
             ],
             "console": "integratedTerminal",
             // "justMyCode": true
+        },
+        {
+            "name": "play ppo urban traffic",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "args": [
+                "--scenario=urban_traffic",
+                "--algorithm=ppo",
+                "--eval",
+                "--load-model=models/ppo/checkpoints/2025-04-16_05-43-47_render_ppo_UrbanTrafficScenario/checkpoint_1000000.zip",
+                "--render",
+                "--start-carla",
+            ],
+            "console": "integratedTerminal",
+            // "justMyCode": true
+        },
+        {
+            "name": "play ddpg urban traffic",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "args": [
+                "--scenario=urban_traffic",
+                "--algorithm=ddpg",
+                "--eval",
+                "--load-model=models/ddpg/checkpoints/2025-04-17_05-18-18_render_ddpg_UrbanTrafficScenario/checkpoint_1000000.zip",
+                "--render",
+                "--start-carla",
+            ],
+            "console": "integratedTerminal",
+            // "justMyCode": true
+        },
+        {
+            "name": "play dqn urban traffic",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "args": [
+                "--scenario=urban_traffic",
+                "--algorithm=dqn",
+                "--eval",
+                "--load-model=models/dqn/checkpoints/2025-04-16_17-12-28_render_small_discrete_action_space_dqn_UrbanTrafficScenario/checkpoint_1000000.zip",
+                "--render",
+                "--start-carla",
+            ],
+            "console": "integratedTerminal",
+            // "justMyCode": true
         }
     ]
 }

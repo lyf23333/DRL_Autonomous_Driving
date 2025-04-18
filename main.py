@@ -1,6 +1,8 @@
 import argparse
 import sys
 import os
+import numpy as np
+import torch
 
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -91,6 +93,13 @@ def main():
     env_config.town = args.town
     env_config.port = args.port
     env_config.render_mode = args.render
+
+    args.seed = 12
+    print(f"Setting random seed to {args.seed}")
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(args.seed)
     
     if args.algorithm == 'dqn':
         env = CarlaEnvDiscrete(
