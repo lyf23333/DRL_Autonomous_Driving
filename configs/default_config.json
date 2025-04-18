@@ -32,9 +32,9 @@
     "reward_weights": {
         "path": 0.4,
         "progress": 0.1,
-        "safety": 0.15,
-        "comfort": 0.05,
-        "trust": 0.2,
-        "intervention": -0.1
+        "safety": 0.0,
+        "comfort": 0.0,
+        "trust": 0.1,
+        "intervention": -0.0
     }
 } 

@@ -41,6 +41,7 @@ class CarlaEnv(gym.Env):
         # Set the action and observation spaces from the managers
         self.action_space = self.action_manager.action_space
         self.observation_space = self.observation_manager.observation_space
+        self.learn_starts = 0
         
         # Scenario management
         self.active_scenario = None
@@ -137,6 +138,9 @@ class CarlaEnv(gym.Env):
                 target_speed=self.target_speed
             )
             return obs, 0.0, True, False, {}
+        
+        if self.step_count < self.learn_starts:
+            action = self.action_space.sample()
             
         # Store previous control for comparison
         if self.prev_control is None:
@@ -327,7 +331,7 @@ class CarlaEnv(gym.Env):
         
         # Sample a random target speed for this episode
         if self.eval:
-            self.target_speed = 30.0  # Fixed speed for evaluation
+            self.target_speed = 20.0  # Fixed speed for evaluation
         else:
             self.target_speed = self.min_target_speed + np.random.random() * (self.base_target_speed - self.min_target_speed)
             print(f"Target speed for this episode: {self.target_speed:.1f} km/h")

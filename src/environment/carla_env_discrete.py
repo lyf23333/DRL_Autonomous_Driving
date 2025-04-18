@@ -11,7 +11,7 @@ class CarlaEnvDiscrete(CarlaEnv):
     """
     
     def __init__(self, trust_interface, config,
-                 steering_levels=5, throttle_brake_levels=3):
+                 steering_levels=5, throttle_brake_levels=5, eval=False):
         """
         Initialize the discrete action space environment.
         
@@ -24,7 +24,7 @@ class CarlaEnvDiscrete(CarlaEnv):
             throttle_brake_levels: Number of discrete throttle/brake levels
         """
         # Initialize the parent class
-        super(CarlaEnvDiscrete, self).__init__( trust_interface=trust_interface, config=config)
+        super(CarlaEnvDiscrete, self).__init__( trust_interface=trust_interface, config=config, eval=eval)
         
         # Define discrete action space parameters
         self.steering_levels = steering_levels

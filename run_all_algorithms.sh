@@ -6,12 +6,12 @@
 
 # Set common parameters
 SCENARIO="urban_traffic"  # Options: lane_switching, urban_traffic, obstacle_avoidance
-TIMESTEPS=1000000           # Total timesteps for training
+TIMESTEPS=3000000           # Total timesteps for training
 TOWN="Town01"              # CARLA town to use
 LR=0.0005                  # Learning rate (3e-4)
-LR_SCHEDULE="exponential"  # Learning rate schedule
+LR_SCHEDULE="constant"  # Learning rate schedule
 CHECKPOINT_FREQ=10000      # Save checkpoint every N timesteps
-RUN_NAME="fix_target_speed"      # Base name for this comparison run
+RUN_NAME="reward_obs_scale_n_steps4096_batch256"      # Base name for this comparison run
 
 # Other settings
 START_CARLA=true           # Whether to start CARLA server automatically
@@ -38,7 +38,6 @@ run_algorithm() {
     CMD="$CMD --scenario $SCENARIO"
     CMD="$CMD --train"
     CMD="$CMD --timesteps $TIMESTEPS"
-    CMD="$CMD --town $TOWN"
     CMD="$CMD --learning-rate $LR"
     CMD="$CMD --lr-schedule $LR_SCHEDULE"
     CMD="$CMD --checkpoint-freq $CHECKPOINT_FREQ"
@@ -71,7 +70,7 @@ echo "Timestamp: $TIMESTAMP"
 
 # Run each algorithm in sequence
 pkill -f "CarlaUE4"
-run_algorithm "ppo"
+# run_algorithm "ppo"
 # run_algorithm "ddpg"
 run_algorithm "dqn"
 

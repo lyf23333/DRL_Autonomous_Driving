@@ -34,25 +34,25 @@
             "justMyCode": true
         },
         {
-            "name": "train ppo urban traffic",
+            "name": "train ddpg urban traffic",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
             "args": [
                 "--scenario=urban_traffic",
-                "--algorithm=ppo",
+                "--algorithm=ddpg",
                 "--train",
                 "--render",
                 "--start-carla",
                 "--quality=Low",
                 // "--offscreen",
-                "--run-name=test",
-                "--timesteps=200000"
+                "--run-name=render",
+                "--timesteps=1000000"
             ],
             "console": "integratedTerminal"
         },
         {
-            "name": "play ppo urban traffic",
+            "name": "play sac urban traffic",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
@@ -65,7 +65,7 @@
                 "--start-carla",
             ],
             "console": "integratedTerminal",
-            "justMyCode": true
+            // "justMyCode": true
         }
     ]
 }
