@@ -7,10 +7,15 @@ class LaneSwitchingScenario:
         self.env = env
         self.world = env.world
         self.other_vehicles = []
-        self.target_speed = 10  # km/h for the slower vehicle
+        self.target_speed = 4  # km/h for the slower vehicle
         self.initial_distance = 30.0  # meters - increased for safe spawning
         self.safe_distance = 10.0  # meters for safety checks
         self.lane_width = 3.5  # meters
+        self._is_setup = False
+
+    @property
+    def is_setup(self):
+        return self._is_setup
         
     def setup(self):
         """Setup the lane switching scenario with a slower vehicle ahead"""
@@ -114,6 +119,8 @@ class LaneSwitchingScenario:
             print(f"- Relative angle: {np.degrees(angle_diff):.1f} degrees")
         else:
             raise ValueError("Failed to spawn slower vehicle after multiple attempts")
+        
+        self._is_setup = True
     
     def _setup_velocity_control(self, vehicle):
         """Setup a velocity controller for the vehicle"""

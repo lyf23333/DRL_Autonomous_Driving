@@ -1,3 +1,4 @@
 from .lane_switching import LaneSwitchingScenario
 from .urban_traffic import UrbanTrafficScenario
 from .obstacle_avoidance import ObstacleAvoidanceScenario
+from .emergency_braking import EmergencyBrakingScenario

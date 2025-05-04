@@ -138,16 +138,17 @@ class CarlaEnv(gym.Env):
             obs = self.observation_manager.get_observation(
                 None, [], 0, self.waypoint_threshold, 
                 self.trust_interface, self.active_scenario,
-                target_speed=self.target_speed,
-                normalized=True
+                target_speed=self.target_speed
             )
             return obs, 0.0, True, False, {}
         
-        self._handle_input(action)
+        
         if isinstance(action, tuple):
             action = (action[0] * 0.5, action[1])
         else:
             action[0] *= 0.5
+
+        self._handle_input(action)
         
         if self.step_count < self.learn_starts:
             action = self.action_space.sample()
@@ -248,8 +249,7 @@ class CarlaEnv(gym.Env):
             self.waypoint_threshold, 
             self.trust_interface, 
             self.active_scenario,
-            target_speed=self.target_speed,
-            normalized=True
+            target_speed=self.target_speed
         )
         
         # Store current control for next comparison
@@ -307,9 +307,15 @@ class CarlaEnv(gym.Env):
         if keys[pygame.K_LEFT]:
             get_key = True
             self.keyboard_steering = max(-1.0, self.keyboard_steering - 0.1)
+            print(f"Left key, keyboard steering: {self.keyboard_steering}")
         elif keys[pygame.K_RIGHT]:
             get_key = True
             self.keyboard_steering = min(1.0, self.keyboard_steering + 0.1)
+            print(f"Right key, keyboard steering: {self.keyboard_steering}")
+
+        print(f"Keyboard steering: {self.keyboard_steering}")
+        print(f"Keyboard throttle: {self.keyboard_throttle}")
+
         
         # Throttle/Brake
         if keys[pygame.K_UP]:
@@ -419,8 +425,7 @@ class CarlaEnv(gym.Env):
             self.waypoint_threshold, 
             self.trust_interface, 
             self.active_scenario,
-            target_speed=self.target_speed,
-            normalized=True
+            target_speed=self.target_speed
         )
         
         # Additional info

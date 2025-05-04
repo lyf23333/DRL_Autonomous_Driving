@@ -5,4 +5,14 @@ __pycache__/
 data/
 tensorboard/
 tensorboard_backup/
+tensorboard_logs/
 models/
+results/
+resized_images/
+evaluation_metrics/
+
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp

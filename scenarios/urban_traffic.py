@@ -35,10 +35,10 @@ class UrbanTrafficScenario:
         self.cleanup()
         
         # Spawn other vehicles
-        self._spawn_traffic_vehicles(num_vehicles=20)
+        self._spawn_traffic_vehicles(num_vehicles=40)
         
         # Spawn pedestrians
-        self._spawn_pedestrians(num_pedestrians=10)
+        self._spawn_pedestrians(num_pedestrians=0)
         
         # Set up traffic lights
         self._setup_traffic_lights()

@@ -15,13 +15,18 @@ class EmergencyBrakingScenario:
         self.env = env
         self.world = env.world
         self.hazard_vehicle = None
-        self.spawn_distance = 50.0  # meters
+        self.spawn_distance = 30.0  # meters
         self.critical_distance = 20.0  # distance at which hazard appears
         self.safe_distance = 5.0  # minimum safe distance
         self._tick_callbacks = []
         self.hazard_triggered = False
         self.start_time = None
         self.reaction_time = None
+        self._is_setup = False
+
+    @property
+    def is_setup(self):
+        return self._is_setup
         
     def setup(self):
         """Setup the emergency braking scenario"""
@@ -63,7 +68,7 @@ class EmergencyBrakingScenario:
         
         if self.hazard_vehicle is not None:
             # Set initial velocity (faster than ego vehicle)
-            target_speed_ms = 30 / 3.6  # 30 km/h to m/s
+            target_speed_ms = 7.5 / 3.6  # 30 km/h to m/s
             road_direction = spawn_transform.get_forward_vector()
             self.hazard_vehicle.set_target_velocity(carla.Vector3D(
                 x=road_direction.x * target_speed_ms,
@@ -76,6 +81,8 @@ class EmergencyBrakingScenario:
             print("Successfully spawned hazard vehicle")
         else:
             print("Failed to spawn hazard vehicle")
+
+        self._is_setup = True
     
     def _setup_hazard_behavior(self):
         """Setup the hazard vehicle's behavior"""
