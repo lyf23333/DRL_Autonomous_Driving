@@ -94,7 +94,7 @@ def main():
     env_config.port = args.port
     env_config.render_mode = args.render
 
-    args.seed = 21
+    args.seed = 61
     print(f"Setting random seed to {args.seed}")
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -163,6 +163,8 @@ def main():
             
             agent.train(scenario, total_timesteps=args.timesteps, run_name=args.run_name)
         elif args.eval:
+            # Start recording for this episode
+            env.start_recording()
             # Evaluation loop
             agent.evaluate(scenario_class, n_episodes=10, run_name=args.run_name)
         else:
@@ -174,6 +176,12 @@ def main():
     finally:
         # Cleanup
         env.close()
+
+        # Stop recording and save data
+        recording_path = env.stop_recording()
+        
+        # Print episode summary
+        print(f"Track recording saved to: {recording_path}")
         
         # Stop CARLA server if we started it
         if carla_server:

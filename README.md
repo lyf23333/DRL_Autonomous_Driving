@@ -310,3 +310,115 @@ This comprehensive trust-based behavior adaptation system creates a more natural
 
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+# CARLA Track Recording and Visualization
+
+This project extends the CARLA autonomous driving environment with the ability to record vehicle tracks during policy execution and visualize them afterward. The visualization displays the vehicle's path, waypoints, and other vehicles on a top-down view of the environment.
+
+## Features
+
+- **Track Recording**: Record the ego vehicle's position, orientation, and speed during simulation
+- **Other Vehicle Tracking**: Optionally track positions of other vehicles in the scene
+- **Top-down View**: Capture a top-down camera view of the environment
+- **Static Visualization**: Generate static visualizations of the vehicle's path with speed color coding
+- **Animated Replay**: Create animated visualizations showing the vehicle's movement over time
+- **Session Management**: Easily manage and review multiple recording sessions
+
+## Requirements
+
+- Python 3.6 or higher
+- OpenCV
+- Matplotlib
+- NumPy
+- CARLA Simulator
+
+## Recording Tracks
+
+The recording functionality is integrated into the `CarlaEnv` class. You can enable recording in your training or evaluation scripts:
+
+```python
+# Example usage in a script
+from src.environment.carla_env import CarlaEnv
+
+# Create the environment
+env = CarlaEnv(config_path="configs/default_config.json")
+
+# Start recording
+env.start_recording(record_other_vehicles=True)
+
+# Run your simulation...
+obs = env.reset()
+for _ in range(1000):
+    action = your_policy(obs)
+    obs, reward, done, info = env.step(action)
+    if done:
+        break
+
+# Stop recording and save data (this is also called automatically when env.close() is called)
+env.stop_recording()
+```
+
+Recording data will be saved to the `recordings/session_YYYY-MM-DD_HH-MM-SS/` directory.
+
+## Visualizing Tracks
+
+Use the `visualize_tracks.py` script to view recorded tracks:
+
+```bash
+# List all available recording sessions
+python visualize_tracks.py --list
+
+# Visualize the most recent recording session
+python visualize_tracks.py
+
+# Visualize a specific recording session
+python visualize_tracks.py --recording-dir recordings/session_2023-06-15_14-30-45
+
+# Create an animated visualization
+python visualize_tracks.py --animate
+
+# Save visualization to a specific location
+python visualize_tracks.py --output my_visualization.png
+
+# Create an animation with a specific framerate
+python visualize_tracks.py --animate --fps 60 --output my_animation.mp4
+
+# Hide waypoints or other vehicles
+python visualize_tracks.py --no-waypoints --no-other-vehicles
+```
+
+## Visualization Features
+
+The visualization includes several useful features:
+
+- **Color-coded track**: The vehicle's path is color-coded by speed
+- **Waypoints**: Shows waypoints used for navigation (if available)
+- **Other vehicles**: Shows positions of other vehicles in the scene (if recorded)
+- **Metadata**: Displays information about the recording session
+- **Animation**: The animated visualization shows the vehicle's movement with a trailing path
+
+## Recording Data Structure
+
+Each recording session creates a directory with the following files:
+
+- `top_down_view.png`: A top-down image of the environment
+- `track_data.json`: The ego vehicle's position, orientation, and speed data
+- `waypoints_data.json`: The waypoints used for navigation
+- `other_vehicles_data.json`: Data about other vehicles in the scene (if recorded)
+- `metadata.json`: Information about the recording session
+
+## Example Visualizations
+
+Static visualization:
+![Example Track Visualization](recordings/session_example/track_visualization.png)
+
+Animation (click to see):
+[![Track Animation](recordings/session_example/track_visualization.png)](recordings/session_example/track_animation.mp4)
+
+## Integration with Your Project
+
+The recording functionality is built into the `CarlaEnv` class, so it can be easily integrated with existing training or evaluation code. Simply call `env.start_recording()` before starting your simulation and `env.stop_recording()` when finished.
+
+## Extending the Visualization
+
+The visualization script is designed to be extensible. You can modify the `plot_static_tracks` and `create_animated_visualization` functions in `visualize_tracks.py` to add additional features or customize the visualization to your needs.

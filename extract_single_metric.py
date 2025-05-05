@@ -8,7 +8,7 @@ when you only need a specific metric.
 import os
 import argparse
 import pandas as pd
-from plot_tensorboard_logs import read_tensorboard_logs
+from plot_csv_logs import read_tensorboard_logs
 
 def extract_single_metric(log_dir, metric_name, output_file, max_events=10000):
     """

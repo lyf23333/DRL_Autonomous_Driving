@@ -9,7 +9,7 @@ import os
 import argparse
 import pandas as pd
 import matplotlib.pyplot as plt
-from plot_tensorboard_logs import read_tensorboard_logs, plot_single_metric, plot_multiple_metrics, plot_comparison_across_trust
+from plot_csv_logs import read_tensorboard_logs, plot_single_metric, plot_multiple_metrics, plot_comparison_across_trust
 
 # Key metrics for evaluation
 EVALUATION_METRICS = {

@@ -114,6 +114,22 @@
             ],
             "console": "integratedTerminal",
             // "justMyCode": true
-        }
+        },
+        {
+            "name": "Record sac urban traffic",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/run_with_recording.py",
+            "args": [
+                "--scenario=urban_traffic",
+                "--algo=sac",
+                "--record-other-vehicles",
+                "--model-path=models/sac/checkpoints/2025-04-15_00-13-21_trust_leve_rew_0.02_sac_sac_UrbanTrafficScenario/checkpoint_1000000.zip",
+                "--deterministic",
+                "--start-carla",
+            ],
+            "console": "integratedTerminal",
+            // "justMyCode": true
+        },
     ]
 }
