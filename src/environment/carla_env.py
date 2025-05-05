@@ -553,7 +553,7 @@ class CarlaEnv(gym.Env):
         """
         # If recording, stop the recording before reset
         if self.recording:
-            self.stop_recording()
+            self.save_recorded_data()
             
         # Set random seed if provided
         if seed is not None:
