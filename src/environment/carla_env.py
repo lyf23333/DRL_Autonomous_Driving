@@ -520,14 +520,6 @@ class CarlaEnv(gym.Env):
             )
             return obs, 0.0, True, False, {}
         
-        
-        if isinstance(action, tuple):
-            action = (action[0] * 0.5, action[1])
-        else:
-            action[0] *= 0.5
-
-        self._handle_input(action)
-        
         if self.step_count < self.learn_starts:
             action = self.action_space.sample()
             

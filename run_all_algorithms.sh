@@ -70,8 +70,9 @@ echo "Timestamp: $TIMESTAMP"
 
 # Run each algorithm in sequence
 pkill -f "CarlaUE4"
-# run_algorithm "ppo"
-# run_algorithm "ddpg"
+run_algorithm "sac"
+run_algorithm "ppo"
+run_algorithm "ddpg"
 run_algorithm "dqn"
 
 echo "All training runs completed!" 

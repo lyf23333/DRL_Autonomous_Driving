@@ -7,7 +7,7 @@ class LaneSwitchingScenario:
         self.env = env
         self.world = env.world
         self.other_vehicles = []
-        self.target_speed = 4  # km/h for the slower vehicle
+        self.target_speed = 10  # km/h for the slower vehicle
         self.initial_distance = 30.0  # meters - increased for safe spawning
         self.safe_distance = 10.0  # meters for safety checks
         self.lane_width = 3.5  # meters
