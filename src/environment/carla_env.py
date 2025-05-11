@@ -133,6 +133,11 @@ class CarlaEnv(gym.Env):
         self.top_down_image = None
         self.spectator_camera = None
         self.record_directory = None
+        self.capture_frequency = 50
+        self.capture_method = "pygame"
+        self.capture_interval = 1.0
+        self.last_capture_time = 0
+        self.frame_counter = 0
     
     def set_scenario(self, scenario, config=None):
         """Set the active scenario for the environment"""
@@ -143,17 +148,32 @@ class CarlaEnv(gym.Env):
         self.waypoints = waypoints
         self.current_waypoint_idx = 0
         
-    def start_recording(self, save_dir="recordings"):
+    def start_recording(self, save_dir="recordings", capture_frequency=50, capture_method="pygame", capture_interval=1.0):
         """Start recording vehicle positions and prepare top-down camera.
         
         Args:
             save_dir: Directory to save recordings
+            capture_frequency: Capture top-down image every N steps (default: 50)
+            capture_method: Method to use for capturing images ('pygame' or 'sensor')
+            capture_interval: Time interval in seconds between image captures (default: 1.0)
+                              If set to None, will use capture_frequency instead
         """
+        if self.recording:
+            print("Recording is already in progress.")
+            return self.record_directory
+            
         # Create save directory if it doesn't exist
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         session_dir = os.path.join(save_dir, f"session_{timestamp}")
         os.makedirs(session_dir, exist_ok=True)
         self.record_directory = session_dir
+        
+        # Create subdirectory for timelapses if using time-based capture
+        if capture_interval is not None:
+            self.timelapse_dir = os.path.join(session_dir, "timelapse")
+            os.makedirs(self.timelapse_dir, exist_ok=True)
+        else:
+            self.timelapse_dir = None
         
         # Clear previous recordings
         self.record_track = []
@@ -162,8 +182,20 @@ class CarlaEnv(gym.Env):
         # Set up a spectator camera above the scene
         self.setup_top_down_camera()
         
+        # Store capture settings
+        self.capture_frequency = capture_frequency
+        self.capture_method = capture_method
+        self.capture_interval = capture_interval
+        self.last_capture_time = 0  # Time of last image capture
+        self.frame_counter = 0      # Count frames for timelapse naming
+        
+        # Set up sensor camera if using sensor method
+        if capture_method == "sensor":
+            self.setup_top_down_sensor()
+        
         self.recording = True
         print(f"Started recording. Data will be saved to {self.record_directory}")
+        return self.record_directory
     
     def _handle_input(self, action):
         """Handle keyboard input"""
@@ -209,14 +241,23 @@ class CarlaEnv(gym.Env):
         """Stop recording and save the data."""
         if not self.recording:
             print("No recording in progress.")
-            return
+            return None
         
         self.recording = False
+        
+        # Capture final image
+        self.capture_top_down_image()
         
         # Save recorded track data
         self.save_recorded_data()
         
+        # Clean up sensor
+        if hasattr(self, 'top_down_sensor') and self.top_down_sensor is not None:
+            self.top_down_sensor.destroy()
+            self.top_down_sensor = None
+        
         print(f"Recording stopped. Data saved to {self.record_directory}")
+        return self.record_directory
     
     def setup_top_down_camera(self, height=60.0):
         """Set up a top-down spectator camera.
@@ -243,6 +284,60 @@ class CarlaEnv(gym.Env):
         
         # Store the spectator for later use
         self.spectator_camera = spectator
+        
+        # Set up sensor for direct capture if not already set up
+        self.setup_top_down_sensor()
+    
+    def setup_top_down_sensor(self):
+        """Set up a dedicated RGB camera sensor for top-down view capture."""
+        if not hasattr(self, 'vehicle') or self.vehicle is None:
+            print("Cannot set up top-down sensor: No vehicle available")
+            return
+        
+        # Clean up previous sensor if it exists
+        if hasattr(self, 'top_down_sensor') and self.top_down_sensor is not None:
+            self.top_down_sensor.destroy()
+        
+        # Get the spectator transform (already positioned above the vehicle)
+        if self.spectator_camera:
+            sensor_transform = self.spectator_camera.get_transform()
+        else:
+            # Fallback - position above vehicle
+            vehicle_loc = self.vehicle.get_location()
+            sensor_transform = carla.Transform(
+                carla.Location(x=vehicle_loc.x, y=vehicle_loc.y, z=vehicle_loc.z + 45.0),
+                carla.Rotation(pitch=-90)  # Point straight down
+            )
+        
+        # Get the blueprint for the camera
+        camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
+        camera_bp.set_attribute('image_size_x', str(self.camera_width))
+        camera_bp.set_attribute('image_size_y', str(self.camera_height))
+        camera_bp.set_attribute('fov', '110')  # Wide angle to capture more of the scene
+        
+        # Spawn the camera in the world (not attached to vehicle to keep fixed overhead view)
+        self.top_down_sensor = self.world.spawn_actor(
+            camera_bp, 
+            sensor_transform
+        )
+        
+        # Image data
+        self.top_down_sensor_image = None
+        
+        # Set up callback
+        self.top_down_sensor.listen(self._process_top_down_image)
+        
+        print("Top-down sensor camera initialized")
+    
+    def _process_top_down_image(self, image):
+        """Process top-down camera image data."""
+        # Convert the image to a numpy array
+        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        array = np.reshape(array, (image.height, image.width, 4))
+        array = array[:, :, :3]  # Remove alpha channel
+        
+        # Store the image
+        self.top_down_sensor_image = array
     
     def update_top_down_camera(self):
         """Update the position of the top-down camera to follow the vehicle."""
@@ -263,28 +358,55 @@ class CarlaEnv(gym.Env):
         
         # Apply the new transform
         self.spectator_camera.set_transform(new_transform)
+        
+        # Also update the sensor position if it exists
+        if hasattr(self, 'top_down_sensor') and self.top_down_sensor is not None:
+            self.top_down_sensor.set_transform(new_transform)
     
-    def capture_top_down_image(self):
-        """Capture a top-down image of the scene."""
-        if not self.pygame_initialized:
-            print("Cannot capture image: Pygame not initialized")
+    def capture_top_down_image(self, save_timelapse=False):
+        """Capture a top-down image of the scene.
+        
+        Args:
+            save_timelapse: Whether to save the image as part of timelapse sequence
+        
+        Returns:
+            numpy.ndarray: The captured image as a numpy array
+        """
+        # Get image from the sensor if available
+        if hasattr(self, 'top_down_sensor_image') and self.top_down_sensor_image is not None:
+            self.top_down_image = self.top_down_sensor_image
+            
+            # Save timelapse image if requested
+            if save_timelapse and hasattr(self, 'timelapse_dir') and self.timelapse_dir:
+                image_file = os.path.join(self.timelapse_dir, f"frame_{self.frame_counter:06d}.png")
+                cv2.imwrite(image_file, cv2.cvtColor(self.top_down_image, cv2.COLOR_RGB2BGR))
+                self.frame_counter += 1
+                
+            return self.top_down_image
+            
+        # Fall back to pygame method if sensor method fails
+        if self.pygame_initialized:
+            # Use the screenshot functionality from pygame
+            screenshot = pygame.Surface((self.camera_width, self.camera_height))
+            screenshot.blit(self.screen, (0, 0), (0, 0, self.camera_width, self.camera_height))
+            
+            # Convert to numpy array
+            screenshot_array = pygame.surfarray.array3d(screenshot)
+            screenshot_array = np.transpose(screenshot_array, (1, 0, 2))  # Adjust dimensions
+            
+            # Store the image
+            self.top_down_image = screenshot_array
+            
+            # Save timelapse image if requested
+            if save_timelapse and hasattr(self, 'timelapse_dir') and self.timelapse_dir:
+                image_file = os.path.join(self.timelapse_dir, f"frame_{self.frame_counter:06d}.png")
+                cv2.imwrite(image_file, cv2.cvtColor(self.top_down_image, cv2.COLOR_RGB2BGR))
+                self.frame_counter += 1
+            
+            return screenshot_array
+        else:
+            print("Cannot capture image: Neither sensor nor pygame is available")
             return None
-        
-        # Render the scene without overlays
-        self.world.tick()
-        
-        # Use the screenshot functionality from pygame
-        screenshot = pygame.Surface((self.camera_width, self.camera_height))
-        screenshot.blit(self.screen, (0, 0), (0, 0, self.camera_width, self.camera_height))
-        
-        # Convert to numpy array
-        screenshot_array = pygame.surfarray.array3d(screenshot)
-        screenshot_array = np.transpose(screenshot_array, (1, 0, 2))  # Adjust dimensions
-        
-        # Store the image
-        self.top_down_image = screenshot_array
-        
-        return screenshot_array
     
     def record_vehicle_positions(self):
         """Record current positions of ego vehicle and other vehicles."""
@@ -374,7 +496,9 @@ class CarlaEnv(gym.Env):
             'timestamp': datetime.datetime.now().isoformat(),
             'num_waypoints': len(self.waypoints) if self.waypoints else 0,
             'num_track_points': len(self.record_track),
-            'num_frames_with_other_vehicles': len(self.record_other_vehicles)
+            'num_frames_with_other_vehicles': len(self.record_other_vehicles),
+            'timelapse_frames': self.frame_counter if hasattr(self, 'frame_counter') else 0,
+            'capture_interval': self.capture_interval if hasattr(self, 'capture_interval') else None
         }
         
         metadata_file = os.path.join(self.record_directory, "metadata.json")
@@ -382,6 +506,8 @@ class CarlaEnv(gym.Env):
             json.dump(metadata, f)
         
         print(f"Saved {len(self.record_track)} track points and {len(self.waypoints) if self.waypoints else 0} waypoints")
+        if hasattr(self, 'frame_counter') and self.frame_counter > 0:
+            print(f"Saved {self.frame_counter} timelapse frames")
     
     def step(self, action):
         """Take a step in the environment"""
@@ -438,8 +564,17 @@ class CarlaEnv(gym.Env):
             self.update_top_down_camera()
             self.record_vehicle_positions()
             
-            # Periodically capture top-down image (every 50 steps)
-            if self.step_count % 50 == 0:
+            # Get current time
+            current_time = self.world.get_snapshot().timestamp.elapsed_seconds
+            
+            # Capture based on time interval if specified
+            if hasattr(self, 'capture_interval') and self.capture_interval is not None:
+                if current_time - self.last_capture_time >= self.capture_interval:
+                    self.capture_top_down_image(save_timelapse=True)
+                    self.last_capture_time = current_time
+            
+            # Or capture based on step frequency
+            elif self.step_count % self.capture_frequency == 0:
                 self.capture_top_down_image()
         
         # Render if needed (but don't break training if rendering fails)
@@ -672,6 +807,11 @@ class CarlaEnv(gym.Env):
         # Clean up sensors
         if self.sensor_manager:
             self.sensor_manager.cleanup_sensors()
+        
+        # Clean up top-down sensor if it exists
+        if hasattr(self, 'top_down_sensor') and self.top_down_sensor is not None:
+            self.top_down_sensor.destroy()
+            self.top_down_sensor = None
         
         # Clean up vehicle
         if hasattr(self, 'vehicle') and self.vehicle is not None:

@@ -35,8 +35,8 @@ class SensorManager:
         self.collision_intensity_threshold = 400.0  # Higher threshold to avoid false positives
         
         # Camera settings
-        self.camera_width = 800
-        self.camera_height = 600
+        self.camera_width = 1920
+        self.camera_height = 1080
         
         # Radar settings
         self.radar_max_distance = 20.0 if config is None else config.radar_range  # Maximum distance for radar observations (meters)

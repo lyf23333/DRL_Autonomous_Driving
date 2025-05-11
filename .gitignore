@@ -11,7 +11,7 @@ results/
 resized_images/
 evaluation_metrics/
 recordings/
-
+tensorboard_csv_files/
 *.png
 *.jpg
 *.jpeg

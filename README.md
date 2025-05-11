@@ -319,9 +319,10 @@ This project extends the CARLA autonomous driving environment with the ability t
 
 - **Track Recording**: Record the ego vehicle's position, orientation, and speed during simulation
 - **Other Vehicle Tracking**: Optionally track positions of other vehicles in the scene
-- **Top-down View**: Capture a top-down camera view of the environment
+- **Top-down View**: Capture a top-down camera view of the environment with 1-second interval timelapses
 - **Static Visualization**: Generate static visualizations of the vehicle's path with speed color coding
 - **Animated Replay**: Create animated visualizations showing the vehicle's movement over time
+- **Timelapse Video**: Generate videos from captured top-down image sequences
 - **Session Management**: Easily manage and review multiple recording sessions
 
 ## Requirements
@@ -343,8 +344,8 @@ from src.environment.carla_env import CarlaEnv
 # Create the environment
 env = CarlaEnv(config_path="configs/default_config.json")
 
-# Start recording
-env.start_recording(record_other_vehicles=True)
+# Start recording with time-based image capture (1 image per second)
+env.start_recording(capture_interval=1.0)
 
 # Run your simulation...
 obs = env.reset()
@@ -359,6 +360,41 @@ env.stop_recording()
 ```
 
 Recording data will be saved to the `recordings/session_YYYY-MM-DD_HH-MM-SS/` directory.
+
+## Top-down Image Capture
+
+You can capture a sequence of top-down images at regular time intervals. This allows you to create timelapse videos of the simulation. To do this:
+
+1. Use the `capture_top_view.py` script which provides a simple way to capture top-down images:
+
+```bash
+# Capture top-down images for 30 seconds with 1-second intervals
+python capture_top_view.py --duration 30 --capture-interval 1.0
+
+# Specify a different town
+python capture_top_view.py --town Town05 --duration 60
+```
+
+2. The images are saved in the `recordings/session_YYYY-MM-DD_HH-MM-SS/timelapse/` directory
+
+3. You can then create a video from these images using the `create_timelapse_video.py` script:
+
+```bash
+# List all sessions with timelapse images
+python create_timelapse_video.py --list
+
+# Create a video from the most recent session
+python create_timelapse_video.py
+
+# Create a video from a specific session
+python create_timelapse_video.py --session 2
+
+# Customize the frame rate
+python create_timelapse_video.py --fps 60
+
+# Specify a custom output path
+python create_timelapse_video.py --output my_timelapse.mp4
+```
 
 ## Visualizing Tracks
 
@@ -406,6 +442,8 @@ Each recording session creates a directory with the following files:
 - `waypoints_data.json`: The waypoints used for navigation
 - `other_vehicles_data.json`: Data about other vehicles in the scene (if recorded)
 - `metadata.json`: Information about the recording session
+- `timelapse/`: Directory containing timestamped top-down images (if using time-based capture)
+- `timelapse_video.mp4`: Video generated from the timelapse images (if created)
 
 ## Example Visualizations
 
