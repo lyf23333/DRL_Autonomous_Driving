@@ -108,7 +108,7 @@ class TrustInterface:
             speed_ratio = (current_speed - self.speed_threshold_low) / speed_range
             return self.speed_factor_min + (self.speed_factor_max - self.speed_factor_min) * speed_ratio
         
-    def update_trust(self, intervention=False, intervention_type=None, dt=0.0):
+    def update_trust(self, intervention=False, intervention_type=None):
         """
         Update trust level based on interventions, driving behavior, and smooth operation
         
@@ -321,7 +321,7 @@ class TrustInterface:
         pygame.quit()
 
 
-    def detect_interventions_and_update_trust(self, current_control, prev_control, world_snapshot=None, dt=0.0):
+    def detect_interventions_and_update_trust(self, current_control, prev_control, world_snapshot=None):
         """
         Detect manual interventions based on control changes and update trust accordingly.
         
@@ -340,14 +340,14 @@ class TrustInterface:
         # Check if an intervention is already active
         if self.intervention_active:
             # An intervention was already recorded
-            self.update_trust(intervention=True, intervention_type=self.intervention_type, dt=dt)
+            self.update_trust(intervention=True, intervention_type=self.intervention_type)
             
             # Reset intervention flag after processing
             self.intervention_active = False
             self.intervention_type = None
             return True
         else:
-            self.update_trust(intervention=False, dt=dt)
+            self.update_trust(intervention=False)
             return False 
 
     def reset(self):

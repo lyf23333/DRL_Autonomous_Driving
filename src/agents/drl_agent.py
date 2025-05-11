@@ -80,7 +80,7 @@ class DRLAgent:
                 tensorboard_log=self.tensorboard_log,
                 learning_rate=sched_LR,
                 clip_range=0.2,
-                ent_coef=1e-3,
+                ent_coef=0.01,
                 n_epochs=5
             )
         elif self.algorithm == 'sac':
@@ -92,13 +92,16 @@ class DRLAgent:
                 learning_rate=sched_LR,
             )
         elif self.algorithm == 'ddpg':
+            self.env.learn_starts = 100
             return DDPG(
                 "MultiInputPolicy",
                 self.env,
                 verbose=1,
                 tensorboard_log=self.tensorboard_log,
-                learning_rate=sched_LR,
+                learning_rate=5e-4,
+                learning_starts=self.env.learn_starts
             )
+            
         elif self.algorithm == 'dqn':
             return DQN(
                 "MultiInputPolicy",
@@ -106,6 +109,7 @@ class DRLAgent:
                 verbose=1,
                 tensorboard_log=self.tensorboard_log,
                 learning_rate=sched_LR,
+                batch_size=64,
             )
         else:
             raise ValueError(f"Unsupported algorithm: {self.algorithm}")

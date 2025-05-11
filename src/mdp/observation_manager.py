@@ -95,7 +95,7 @@ class ObservationManager:
             self.action_history.append(np.array(action, dtype=np.float32))
     
     def get_observation(self, vehicle, waypoints, current_waypoint_idx, waypoint_threshold, 
-                       trust_interface, active_scenario, target_speed=20.0):
+                       trust_interface, active_scenario, target_speed=20.0, normalized=False):
         """
         Generate observation from environment state.
         
@@ -116,7 +116,7 @@ class ObservationManager:
         
         # Get vehicle state observation (now includes trust level)
         vehicle_state = self._get_vehicle_state(vehicle, waypoints, current_waypoint_idx, 
-                                               waypoint_threshold, target_speed, trust_level)
+                                               waypoint_threshold, target_speed, trust_level, normalized=normalized)
         
         # Get location history
         location_history = self._get_location_history(vehicle)
@@ -128,17 +128,25 @@ class ObservationManager:
         radar_observation = self.sensor_manager.get_radar_observation()
         
         # Combine all observations
-        obs = {
-            'vehicle_state': vehicle_state,
-            'location_history': location_history,
-            'action_history': action_history,
-            'radar_obs': radar_observation
-        }
+        if normalized:
+            obs = {
+                'vehicle_state': vehicle_state,
+                'location_history': location_history / 10.0,
+                'action_history': action_history,
+                'radar_obs': radar_observation / 20.0
+            }
+        else:
+            obs = {
+                'vehicle_state': vehicle_state,
+                'location_history': location_history,
+                'action_history': action_history,
+                'radar_obs': radar_observation
+            }
         
         return obs
     
     def _get_vehicle_state(self, vehicle, waypoints, current_waypoint_idx, waypoint_threshold, 
-                          target_speed=20.0, trust_level=0.75):
+                          target_speed=20.0, trust_level=0.75, normalized=False):
         """Get vehicle state observation
         
         Args:
@@ -193,6 +201,8 @@ class ObservationManager:
 
         # Normalize target speed (assuming max is around 50 km/h)
         normalized_target_speed = target_speed / 50.0
+        if normalized:
+            relative_waypoints = relative_waypoints / 20.0
 
         # Combine all vehicle state information
         vehicle_state = np.array([

@@ -1,6 +1,8 @@
 import argparse
 import sys
 import os
+import numpy as np
+import torch
 
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -9,7 +11,7 @@ from src.environment import CarlaEnv, CarlaEnvDiscrete
 from src.environment.carla_env_config import CarlaEnvConfig
 from src.trust.trust_interface import TrustInterface
 from src.agents.drl_agent import DRLAgent
-from scenarios import LaneSwitchingScenario, UrbanTrafficScenario, ObstacleAvoidanceScenario
+from scenarios import LaneSwitchingScenario, UrbanTrafficScenario, ObstacleAvoidanceScenario, EmergencyBrakingScenario
 from src.utils.carla_server import CarlaServerManager
 
 def parse_args():
@@ -17,7 +19,7 @@ def parse_args():
     
     # Scenario and algorithm options
     parser.add_argument('--scenario', type=str, default='lane_switching',
-                      choices=['lane_switching', 'urban_traffic', 'obstacle_avoidance'],
+                      choices=['lane_switching', 'urban_traffic', 'obstacle_avoidance', 'emergency_braking'],
                       help='Scenario to run')
     parser.add_argument('--algorithm', type=str, default='ppo',
                       choices=['ppo', 'sac', 'ddpg', 'dqn'],
@@ -91,6 +93,13 @@ def main():
     env_config.town = args.town
     env_config.port = args.port
     env_config.render_mode = args.render
+
+    args.seed = 61
+    print(f"Setting random seed to {args.seed}")
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(args.seed)
     
     if args.algorithm == 'dqn':
         env = CarlaEnvDiscrete(
@@ -129,7 +138,8 @@ def main():
     scenario_map = {
         'lane_switching': LaneSwitchingScenario,
         'urban_traffic': UrbanTrafficScenario,
-        'obstacle_avoidance': ObstacleAvoidanceScenario
+        'obstacle_avoidance': ObstacleAvoidanceScenario,
+        'emergency_braking': EmergencyBrakingScenario
     }
     
     scenario_class = scenario_map.get(args.scenario)
@@ -153,6 +163,8 @@ def main():
             
             agent.train(scenario, total_timesteps=args.timesteps, run_name=args.run_name)
         elif args.eval:
+            # Start recording for this episode
+            env.start_recording()
             # Evaluation loop
             agent.evaluate(scenario_class, n_episodes=10, run_name=args.run_name)
         else:
@@ -164,6 +176,12 @@ def main():
     finally:
         # Cleanup
         env.close()
+
+        # Stop recording and save data
+        recording_path = env.stop_recording()
+        
+        # Print episode summary
+        print(f"Track recording saved to: {recording_path}")
         
         # Stop CARLA server if we started it
         if carla_server:
