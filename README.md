@@ -5,6 +5,8 @@ This project explores how Deep Reinforcement Learning (DRL) can personalize auto
 ## Project Overview
 The project focuses on adapting autonomous vehicle behavior based on user's dispositional trust - the baseline level of trust a person has in automated systems. The system uses deep reinforcement learning to dynamically adjust driving behavior according to trust feedback. This project focuses on evaluating the effect of different deep reinforcement learning algorithms on the performance of the system.
 
+![Watch demo video](media/animation.gif)
+
 ## Prerequisites
 - Ubuntu 20.04
 - Python 3.8
@@ -74,6 +76,17 @@ pip3 install -r requirements.txt
 ```
 
 ## Running Scenarios
+
+### Scenarios
+
+**urban traffic**
+![example](media/urban_traffic_SAC.png)
+
+**lane switching**
+![example](media/lane_switching_1.png)
+
+**emergency braking**
+![example](media/emergency_braking.png)
 
 ### Training and Evaluation
 
@@ -271,192 +284,3 @@ The system implements a comprehensive trust-based behavior adaptation mechanism 
 - **Action Smoothing**: Lower trust levels lead to more gradual changes in control inputs, avoiding abrupt transitions.
 - **Jerk Minimization**: The system reduces acceleration and deceleration rates to minimize jerk (rate of change of acceleration) when trust is low.
 - **Predictable Behavior**: At low trust levels, the vehicle maintains more consistent and predictable behavior patterns.
-
-### Implementation Details
-
-The trust-based behavior adaptation is implemented through several key components:
-
-1. **Behavior Adjustment Factors**: The system calculates and maintains behavior adjustment factors based on trust level and driving metrics:
-   - `trust_level`: The current trust level (0.0 to 1.0)
-   - `behavior_factor`: Combined behavior factor incorporating stability, smoothness, and hesitation
-   - `stability_factor`: Measure of steering stability
-   - `smoothness_factor`: Measure of acceleration and braking smoothness
-   - `hesitation_factor`: Measure of confidence vs. hesitation
-
-2. **Action Adjustment**: The `_adjust_action_based_on_trust` method modifies the agent's actions based on these factors:
-   - Steering adjustments based on stability
-   - Throttle/brake adjustments based on trust and smoothness
-   - Random hesitation effects when trust is low
-
-3. **PID Control Parameters**: For the automatic controller, PID parameters are dynamically adjusted based on trust:
-   - Lower gains at low trust levels for more conservative control
-   - Smaller maximum steering changes for smoother transitions
-   - Adjusted maximum throttle and braking forces
-
-4. **Visualization**: The system provides visual feedback on trust-based behavior adjustments through the user interface, displaying:
-   - Current trust level and behavior factors
-   - Driving metrics and their impact on behavior
-   - Intervention probability and history
-
-This comprehensive trust-based behavior adaptation system creates a more natural and human-like driving experience that responds appropriately to the user's trust level, helping to build and maintain trust over time.
-
-## Evaluation Scenarios
-1. Lane Switching
-2. Urban Traffic Navigation
-3. Obstacle Avoidance
-4. Emergency Braking
-5. Pedestrian Interaction (TODO)
-
-
-## License
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-# CARLA Track Recording and Visualization
-
-This project extends the CARLA autonomous driving environment with the ability to record vehicle tracks during policy execution and visualize them afterward. The visualization displays the vehicle's path, waypoints, and other vehicles on a top-down view of the environment.
-
-## Features
-
-- **Track Recording**: Record the ego vehicle's position, orientation, and speed during simulation
-- **Other Vehicle Tracking**: Optionally track positions of other vehicles in the scene
-- **Top-down View**: Capture a top-down camera view of the environment with 1-second interval timelapses
-- **Static Visualization**: Generate static visualizations of the vehicle's path with speed color coding
-- **Animated Replay**: Create animated visualizations showing the vehicle's movement over time
-- **Timelapse Video**: Generate videos from captured top-down image sequences
-- **Session Management**: Easily manage and review multiple recording sessions
-
-## Requirements
-
-- Python 3.6 or higher
-- OpenCV
-- Matplotlib
-- NumPy
-- CARLA Simulator
-
-## Recording Tracks
-
-The recording functionality is integrated into the `CarlaEnv` class. You can enable recording in your training or evaluation scripts:
-
-```python
-# Example usage in a script
-from src.environment.carla_env import CarlaEnv
-
-# Create the environment
-env = CarlaEnv(config_path="configs/default_config.json")
-
-# Start recording with time-based image capture (1 image per second)
-env.start_recording(capture_interval=1.0)
-
-# Run your simulation...
-obs = env.reset()
-for _ in range(1000):
-    action = your_policy(obs)
-    obs, reward, done, info = env.step(action)
-    if done:
-        break
-
-# Stop recording and save data (this is also called automatically when env.close() is called)
-env.stop_recording()
-```
-
-Recording data will be saved to the `recordings/session_YYYY-MM-DD_HH-MM-SS/` directory.
-
-## Top-down Image Capture
-
-You can capture a sequence of top-down images at regular time intervals. This allows you to create timelapse videos of the simulation. To do this:
-
-1. Use the `capture_top_view.py` script which provides a simple way to capture top-down images:
-
-```bash
-# Capture top-down images for 30 seconds with 1-second intervals
-python capture_top_view.py --duration 30 --capture-interval 1.0
-
-# Specify a different town
-python capture_top_view.py --town Town05 --duration 60
-```
-
-2. The images are saved in the `recordings/session_YYYY-MM-DD_HH-MM-SS/timelapse/` directory
-
-3. You can then create a video from these images using the `create_timelapse_video.py` script:
-
-```bash
-# List all sessions with timelapse images
-python create_timelapse_video.py --list
-
-# Create a video from the most recent session
-python create_timelapse_video.py
-
-# Create a video from a specific session
-python create_timelapse_video.py --session 2
-
-# Customize the frame rate
-python create_timelapse_video.py --fps 60
-
-# Specify a custom output path
-python create_timelapse_video.py --output my_timelapse.mp4
-```
-
-## Visualizing Tracks
-
-Use the `visualize_tracks.py` script to view recorded tracks:
-
-```bash
-# List all available recording sessions
-python visualize_tracks.py --list
-
-# Visualize the most recent recording session
-python visualize_tracks.py
-
-# Visualize a specific recording session
-python visualize_tracks.py --recording-dir recordings/session_2023-06-15_14-30-45
-
-# Create an animated visualization
-python visualize_tracks.py --animate
-
-# Save visualization to a specific location
-python visualize_tracks.py --output my_visualization.png
-
-# Create an animation with a specific framerate
-python visualize_tracks.py --animate --fps 60 --output my_animation.mp4
-
-# Hide waypoints or other vehicles
-python visualize_tracks.py --no-waypoints --no-other-vehicles
-```
-
-## Visualization Features
-
-The visualization includes several useful features:
-
-- **Color-coded track**: The vehicle's path is color-coded by speed
-- **Waypoints**: Shows waypoints used for navigation (if available)
-- **Other vehicles**: Shows positions of other vehicles in the scene (if recorded)
-- **Metadata**: Displays information about the recording session
-- **Animation**: The animated visualization shows the vehicle's movement with a trailing path
-
-## Recording Data Structure
-
-Each recording session creates a directory with the following files:
-
-- `top_down_view.png`: A top-down image of the environment
-- `track_data.json`: The ego vehicle's position, orientation, and speed data
-- `waypoints_data.json`: The waypoints used for navigation
-- `other_vehicles_data.json`: Data about other vehicles in the scene (if recorded)
-- `metadata.json`: Information about the recording session
-- `timelapse/`: Directory containing timestamped top-down images (if using time-based capture)
-- `timelapse_video.mp4`: Video generated from the timelapse images (if created)
-
-## Example Visualizations
-
-Static visualization:
-![Example Track Visualization](recordings/session_example/track_visualization.png)
-
-Animation (click to see):
-[![Track Animation](recordings/session_example/track_visualization.png)](recordings/session_example/track_animation.mp4)
-
-## Integration with Your Project
-
-The recording functionality is built into the `CarlaEnv` class, so it can be easily integrated with existing training or evaluation code. Simply call `env.start_recording()` before starting your simulation and `env.stop_recording()` when finished.
-
-## Extending the Visualization
-
-The visualization script is designed to be extensible. You can modify the `plot_static_tracks` and `create_animated_visualization` functions in `visualize_tracks.py` to add additional features or customize the visualization to your needs.
